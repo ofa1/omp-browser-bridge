@@ -371,7 +371,7 @@ export async function installHost(options = {}) {
   }
 
   // Windows registry via execFileSync (no shell)
-  if (platform === "win32") {
+  if (platform === "win32" && !options.skipRegistry) {
     const primaryManifest = manifestPaths[0];
     const regExe = getRegExePath();
     const regArgs = getRegistryAddArgs(primaryManifest);
@@ -426,7 +426,7 @@ export async function uninstallHost(options = {}) {
     } catch {}
   }
 
-  if (platform === "win32") {
+  if (platform === "win32" && !options.skipRegistry) {
     const regExe = getRegExePath();
     const regArgs = getRegistryDeleteArgs();
     try {

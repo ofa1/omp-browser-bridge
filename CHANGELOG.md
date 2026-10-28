@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-10-28
+
+### Changed
+- No add-on behaviour changes; maintenance release exercising the new release pipeline.
+- CI: multi-OS (Linux, macOS, Windows) x Node 18/22/24 test matrix, TypeScript typecheck, and a native Node test suite.
+- Release workflow: GitHub release is created before asynchronous AMO submission; fails early if AMO credentials are missing.
+- `npm run bump <version>` keeps `package.json`, `package-lock.json`, and `firefox/manifest.json` in sync with strict version validation.
+
 ## [0.2.1] - 2026-10-28
 
 ### Added

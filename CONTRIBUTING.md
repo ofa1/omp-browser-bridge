@@ -90,11 +90,6 @@ Build the production WebExtension zip artifact:
 ```bash
 npm run build
 ```
-
-Verify npm package tarball contents:
-```bash
-npm run pack:check
-```
 ## Cutting an AMO & GitHub Release
 
 Mozilla Add-ons (AMO) requires strict version increments: **a published or submitted version number can never be reused or re-signed on AMO**.
@@ -115,10 +110,9 @@ When preparing a new release:
    git push origin main --tags
    ```
 4. **Automated CI/CD**:
-   The GitHub Actions release workflow triggers on tags matching `v*` (or via manual `workflow_dispatch`):
+   The GitHub Actions release workflow triggers on tags matching `v*` (or via manual `workflow_dispatch`, which must be run from the tag ref):
    - Verifies the git tag version matches `firefox/manifest.json` and `package.json`.
    - Runs the full verification suite (`npm run check`: lint, syntax, TypeScript, and unit tests).
    - Builds the production WebExtension zip artifact.
-   - Submits the extension for signing on AMO via `web-ext sign` (if `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets are configured).
-   - Publishes to npm with provenance (if `NPM_TOKEN` secret is configured).
    - Creates a GitHub release with release notes and `dist/*` artifacts attached.
+   - Submits the extension for signing on AMO via `web-ext sign` with `--approval-timeout 0` and `--amo-metadata amo/metadata.json` (listed channel approval is async; review takes longer than 15 minutes, so it submits for review without blocking).

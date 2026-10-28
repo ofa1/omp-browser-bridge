@@ -24,7 +24,7 @@
   "files": [
     "omp",
     "host/host.mjs",
-    "scripts"
+    "scripts/install-host.mjs"
   ],
   "engines": {
     "node": ">=18"
@@ -45,7 +45,6 @@
     "dev": "web-ext run --source-dir firefox --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url about:blank",
     "build:addon": "web-ext build --source-dir firefox --artifacts-dir dist --overwrite-dest",
     "build": "npm run build:addon",
-    "pack:check": "npm pack --dry-run",
     "sign": "web-ext sign --source-dir firefox --artifacts-dir dist --channel unlisted",
     "bump": "node scripts/bump-version.mjs"
   },

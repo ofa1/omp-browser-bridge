@@ -311,8 +311,10 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       active: z.boolean().optional().describe("open: focus the new tab (default false)"),
     }),
     defaultInactive: true,
-    approval: (args: { action?: string; tabId?: number }) =>
-      !args.action || args.action === "list" ? "read" : args.action === "select" ? readIfAgentTab(args.tabId) : "exec",
+    approval: (args) => {
+      const a = args as { action?: string; tabId?: number };
+      return !a.action || a.action === "list" ? "read" : a.action === "select" ? readIfAgentTab(a.tabId) : "exec";
+    },
     async execute(_id, params, signal) {
       const action = params.action ?? "list";
       if (action === "list") {
@@ -388,7 +390,10 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       offset: z.number().int().optional().describe("Character offset for paging"),
     }),
     defaultInactive: true,
-    approval: (args: { tabId?: number }) => readIfAgentTab(args.tabId ?? currentTab),
+    approval: (args: unknown) => {
+      const a = args as { tabId?: number } | undefined;
+      return readIfAgentTab(a?.tabId ?? currentTab);
+    },
     async execute(_id, params, signal) {
       const id = requireTab(params.tabId);
       const snap = await rpc<Snapshot>(
@@ -496,7 +501,10 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       format: z.enum(["png", "jpeg"]).optional().describe("Default jpeg"),
     }),
     defaultInactive: true,
-    approval: (args: { tabId?: number }) => readIfAgentTab(args.tabId ?? currentTab),
+    approval: (args: unknown) => {
+      const a = args as { tabId?: number } | undefined;
+      return readIfAgentTab(a?.tabId ?? currentTab);
+    },
     async execute(_id, params, signal) {
       const id = requireTab(params.tabId);
       const format = params.format ?? "jpeg";

@@ -221,6 +221,7 @@ npm run check
 
 # Build production add-on zip
 npm run build
+```
 
 ### Repository Layout
 

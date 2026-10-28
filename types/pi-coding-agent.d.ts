@@ -1,3 +1,4 @@
+// Ambient type definitions mirroring @oh-my-pi/pi-coding-agent@18.13.2
 declare module "@oh-my-pi/pi-coding-agent" {
   export interface ExtensionUIContext {
     setStatus(key: string, text: string | undefined): void;
@@ -81,7 +82,7 @@ declare module "@oh-my-pi/pi-coding-agent" {
     defaultInactive?: boolean;
     hidden?: boolean;
     loadMode?: "essential" | "discoverable";
-    approval?: "read" | "write" | "exec" | ((args: Static<TParams>) => "read" | "write" | "exec");
+    approval?: "read" | "write" | "exec" | ((args: unknown) => "read" | "write" | "exec");
     execute: (
       toolCallId: string,
       params: Static<TParams>,

@@ -40,6 +40,13 @@ export function getPackageVersion(root = resolveRoot()) {
 export function getStableHostDir(customDir, home = os.homedir()) {
   return path.join(customDir || path.join(home, ".omp", "firefox"), "host");
 }
+/**
+ * @param {number} pid
+ * @param {string} endpoint
+ * @param {string} [baseDir]
+ * @param {string} [platform]
+ * @returns {boolean}
+ */
 export function isValidEndpointForPid(pid, endpoint, baseDir = path.join(os.homedir(), ".omp", "firefox"), platform = process.platform) {
   if (platform === "win32") {
     return /^\\\\\.\\pipe\\omp-firefox-[0-9a-fA-F-]+$/.test(endpoint);

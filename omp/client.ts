@@ -3,7 +3,6 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { isValidEndpointForPid } from "../scripts/install-host.mjs";
-export { isValidEndpointForPid };
 
 export function getSocketDir(): string {
   return process.env.OMP_FIREFOX_DIR || path.join(os.homedir(), ".omp", "firefox");

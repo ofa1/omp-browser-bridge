@@ -16,8 +16,7 @@ This document provides a human-readable copy of the add-on listing metadata for 
 ---
 
 ### Categories
-- **Primary Category**: Web Development (`web-development`)
-- **Secondary Category**: Other (`other`)
+- **Category**: Web Development (`web-development`) — AMO doesn't allow `other` to be combined with another category.
 
 ---
 

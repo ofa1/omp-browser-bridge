@@ -50,7 +50,8 @@
   }
 
   function style(el) {
-    return el.ownerDocument.defaultView.getComputedStyle(el);
+    const win = el.ownerDocument.defaultView || window;
+    return win.getComputedStyle(el);
   }
 
   function visible(el) {
@@ -88,11 +89,18 @@
     return null;
   }
 
+  const CONTAINER_TAGS = new Set(["div", "section", "article", "main", "aside", "header", "footer", "nav", "form", "fieldset"]);
+
   function isInteractive(el) {
     const role = roleOf(el);
     if (role && INTERACTIVE_ROLES.has(role)) return true;
     const ti = el.getAttribute("tabindex");
-    if (ti !== null && Number(ti) >= 0 && el.localName !== "body") return true;
+    if (ti !== null && Number(ti) >= 0 && el.localName !== "body") {
+      if (CONTAINER_TAGS.has(el.localName)) {
+        return !el.querySelector("a[href], button, input, select, textarea, iframe, frame, [role='button'], [role='link']");
+      }
+      return true;
+    }
     return el.hasAttribute("onclick");
   }
 
@@ -158,9 +166,21 @@
     return parts.join(" ");
   }
 
-  function snapshot({ mode = "page", scope = "page", selector, maxChars = 10000, offset = 0 } = {}) {
-    const root = selector ? document.querySelector(selector) : document.body;
-    if (!root) throw new Error(`No element matches selector ${selector}`);
+  function snapshot({ mode = "page", scope = "page", selector, frameSelector, maxChars = 10000, offset = 0 } = {}) {
+    let root = document.body;
+    if (frameSelector) {
+      const frame = document.querySelector(frameSelector);
+      if (!frame) throw new Error(`No frame matches frameSelector ${frameSelector}`);
+      try {
+        root = frame.contentDocument?.body || root;
+      } catch {
+        throw new Error(`Cannot access frame document for ${frameSelector} (cross-origin or sandboxed)`);
+      }
+    }
+    if (selector) {
+      root = root.querySelector(selector);
+      if (!root) throw new Error(`No element matches selector ${selector}`);
+    }
     for (const [id, el] of byId) if (!el.isConnected) byId.delete(id);
 
     const onlyRefs = mode === "interactive";
@@ -210,8 +230,14 @@
           doc = el.contentDocument;
         } catch {}
         flush();
-        if (doc?.body) walk(doc.body);
-        else lines.push(`[iframe ${shortUrl(el.src)}]`);
+        if (doc?.body) {
+          const frameLabel = el.id ? `#${el.id}` : (el.name ? `[name="${el.name}"]` : shortUrl(el.src || ""));
+          if (!onlyRefs) lines.push(`--- [frame ${frameLabel}] ---`);
+          walk(doc.body);
+          if (!onlyRefs) lines.push(`--- [end frame ${frameLabel}] ---`);
+        } else {
+          lines.push(`[iframe ${shortUrl(el.src)}]`);
+        }
         flush();
         return;
       }
@@ -257,14 +283,35 @@
     };
   }
 
-  function resolve({ ref, selector } = {}) {
+  function resolve({ ref, selector, frameSelector } = {}) {
     if (ref !== undefined && ref !== null) {
       const el = byId.get(Number(ref));
       if (!el || !el.isConnected) throw new Error(`Ref [${ref}] is stale or unknown; take a new snapshot`);
       return el;
     }
     if (selector) {
-      const el = document.querySelector(selector);
+      let root = document;
+      if (frameSelector) {
+        const frame = document.querySelector(frameSelector);
+        if (!frame) throw new Error(`No frame matches frameSelector ${frameSelector}`);
+        try {
+          root = frame.contentDocument || root;
+        } catch {
+          throw new Error(`Cannot access frame document for ${frameSelector} (cross-origin or sandboxed)`);
+        }
+      }
+      let el = root.querySelector(selector);
+      if (!el && !frameSelector) {
+        for (const frame of document.querySelectorAll("iframe, frame")) {
+          try {
+            const doc = frame.contentDocument;
+            if (doc) {
+              el = doc.querySelector(selector);
+              if (el) break;
+            }
+          } catch {}
+        }
+      }
       if (!el) throw new Error(`No element matches selector ${selector}`);
       return el;
     }
@@ -273,18 +320,19 @@
 
   function mouse(el, type, extra = {}) {
     const r = el.getBoundingClientRect();
+    const win = el.ownerDocument.defaultView || window;
     const init = {
       bubbles: !type.endsWith("enter"),
       cancelable: true,
       composed: true,
-      view: window,
+      view: win,
       clientX: r.left + r.width / 2,
       clientY: r.top + r.height / 2,
       button: 0,
       ...extra,
     };
-    const Ctor = type.startsWith("pointer") ? PointerEvent : MouseEvent;
-    if (Ctor === PointerEvent) Object.assign(init, { pointerId: 1, pointerType: "mouse", isPrimary: true });
+    const Ctor = type.startsWith("pointer") ? (win.PointerEvent || PointerEvent) : (win.MouseEvent || MouseEvent);
+    if (Ctor === win.PointerEvent || Ctor === PointerEvent) Object.assign(init, { pointerId: 1, pointerType: "mouse", isPrimary: true });
     return el.dispatchEvent(new Ctor(type, init));
   }
 
@@ -306,17 +354,35 @@
   }
 
   function input(el, inputType, data) {
-    el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType, data }));
+    const win = el.ownerDocument.defaultView || window;
+    const Ctor = win.InputEvent || InputEvent;
+    el.dispatchEvent(new Ctor("input", { bubbles: true, composed: true, inputType, data }));
   }
 
   function fill(el, value) {
     el.focus();
     if (el.isContentEditable) {
-      el.ownerDocument.execCommand("selectAll");
-      if (!el.ownerDocument.execCommand("insertText", false, value)) {
-        el.textContent = value;
-        input(el, "insertText", value);
+      const doc = el.ownerDocument;
+      const win = doc.defaultView || window;
+      const sel = win.getSelection?.();
+      if (sel) {
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
       }
+      doc.execCommand("selectAll");
+      let ok = false;
+      try {
+        ok = doc.execCommand("insertText", false, value);
+      } catch {}
+      if (!ok) {
+        el.textContent = value;
+      }
+      const InputEventCtor = win.InputEvent || InputEvent;
+      el.dispatchEvent(new InputEventCtor("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "insertText", data: value }));
+      input(el, "insertText", value);
+      el.dispatchEvent(new Event("change", { bubbles: true }));
       return;
     }
     if (!("value" in el) || el.localName === "select") throw new Error("Element is not a text field; use click/select");
@@ -503,13 +569,45 @@
     return [desc, note].filter(Boolean).join(" ");
   }
 
-  function check({ selector, text, gone } = {}) {
+  function check({ selector, text, gone, frameSelector } = {}) {
     let found = true;
+    let root = document;
+    if (frameSelector) {
+      const frame = document.querySelector(frameSelector);
+      if (frame) {
+        try { root = frame.contentDocument || root; } catch {}
+      }
+    }
     if (selector) {
-      const el = document.querySelector(selector);
+      let el = root.querySelector(selector);
+      if (!el && !frameSelector) {
+        for (const frame of document.querySelectorAll("iframe, frame")) {
+          try {
+            const doc = frame.contentDocument;
+            if (doc) {
+              el = doc.querySelector(selector);
+              if (el) break;
+            }
+          } catch {}
+        }
+      }
       found = !!el && visible(el);
     }
-    if (found && text) found = (document.body?.innerText || "").includes(text);
+    if (found && text) {
+      const bodyText = root.body?.innerText || "";
+      found = bodyText.includes(text);
+      if (!found && !frameSelector) {
+        for (const frame of document.querySelectorAll("iframe, frame")) {
+          try {
+            const doc = frame.contentDocument;
+            if (doc?.body?.innerText?.includes(text)) {
+              found = true;
+              break;
+            }
+          } catch {}
+        }
+      }
+    }
     return gone ? !found : found;
   }
 

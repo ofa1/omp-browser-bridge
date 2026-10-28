@@ -360,8 +360,27 @@ async function runActSteps(tabId, steps, timeoutMs) {
 }
 
 // Only eval (when allowed) may use executeScript({ code }).
-async function executeEval(tabId, code, args = [], timeoutMs = 15000) {
-  const body = `(async () => { const page = window.wrappedJSObject; const args = ${JSON.stringify(args)}; const ref = (n) => window.__omp.resolve({ ref: n });\n${code}\n})()`;
+async function executeEval(tabId, code, args = [], frameSelector, timeoutMs = 15000) {
+  const fsJson = JSON.stringify(frameSelector || null);
+  const body = `(async () => {
+    let win = window;
+    let doc = document;
+    const fs = ${fsJson};
+    if (fs) {
+      const frame = document.querySelector(fs);
+      if (!frame) throw new Error("No frame matches frameSelector " + fs);
+      if (frame.contentWindow) {
+        win = frame.contentWindow;
+        doc = frame.contentDocument;
+      }
+    }
+    const page = win.wrappedJSObject || win;
+    const document = doc;
+    const window = win;
+    const args = ${JSON.stringify(args)};
+    const ref = (n) => window.__omp.resolve({ ref: n, frameSelector: fs });
+    ${code}
+  })()`;
   const evalCode = `Promise.resolve().then(() => ${body}).then(v => ({ ok: true, v: window.__omp.toJSONSafe(v) }), e => ({ ok: false, e: String(e && e.message || e) }))`;
   const run = async () => {
     try {
@@ -478,7 +497,7 @@ async function navigate({ tabId, url, action, timeoutMs = 20000 }) {
   return { ...(await tabInfo(tabId)), loaded };
 }
 
-async function waitFor(tabId, { selector, text, url, gone, timeoutMs = 10000 }) {
+async function waitFor(tabId, { selector, text, url, gone, frameSelector, timeoutMs = 10000 }) {
   if (!selector && !text && !url) throw new Error("wait needs selector, text, or url");
   const deadline = Date.now() + timeoutMs;
   while (true) {
@@ -490,7 +509,7 @@ async function waitFor(tabId, { selector, text, url, gone, timeoutMs = 10000 }) 
     }
     if ((selector || text) && (!url || ok)) {
       try {
-        ok = await sendTab(tabId, "check", { selector, text, gone: !!gone }, 3000);
+        ok = await sendTab(tabId, "check", { selector, text, gone: !!gone, frameSelector }, 3000);
       } catch (e) {
         if (!isNavigationError(e) && !/timed out|returned nothing/.test(e.message)) throw e;
         ok = false;
@@ -575,11 +594,11 @@ const methods = {
     }
   },
 
-  async eval({ tabId, code, args = [], timeoutMs = 15000 }) {
+  async eval({ tabId, code, args = [], frameSelector, timeoutMs = 15000 }) {
     if (!allowEval) {
       throw new Error('firefox_eval is disabled. Ask the user to turn on "Allow page JavaScript" in the OMP Browser Bridge popup in Firefox.');
     }
-    return executeEval(tabId, code, args, timeoutMs);
+    return executeEval(tabId, code, args, frameSelector, timeoutMs);
   },
 
   async screenshot({ tabId, fullPage, ref, selector, format = "png", quality = 80, scale = 1 }) {

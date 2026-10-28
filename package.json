@@ -37,7 +37,7 @@
   "scripts": {
     "install-host": "node scripts/install-host.mjs",
     "lint:addon": "web-ext lint --source-dir firefox",
-    "lint:syntax": "node --check host/host.mjs scripts/install-host.mjs firefox/background.js firefox/content.js firefox/popup/popup.js",
+    "lint:syntax": "node --check host/host.mjs scripts/install-host.mjs scripts/bump-version.mjs firefox/background.js firefox/content.js firefox/popup/popup.js",
     "lint": "npm run lint:addon && npm run lint:syntax",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
@@ -46,7 +46,8 @@
     "build:addon": "web-ext build --source-dir firefox --artifacts-dir dist --overwrite-dest",
     "build": "npm run build:addon",
     "pack:check": "npm pack --dry-run",
-    "sign": "web-ext sign --source-dir firefox --artifacts-dir dist --channel unlisted"
+    "sign": "web-ext sign --source-dir firefox --artifacts-dir dist --channel unlisted",
+    "bump": "node scripts/bump-version.mjs"
   },
   "peerDependencies": {
     "@oh-my-pi/pi-coding-agent": ">=18.0.0"

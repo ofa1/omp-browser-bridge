@@ -11,6 +11,7 @@ describe("syntax and format validation", () => {
   const jsFiles = [
     "host/host.mjs",
     "scripts/install-host.mjs",
+    "scripts/bump-version.mjs",
     "firefox/background.js",
     "firefox/content.js",
     "firefox/popup/popup.js",

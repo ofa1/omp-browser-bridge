@@ -100,17 +100,25 @@ npm run pack:check
 Mozilla Add-ons (AMO) requires strict version increments: **a published or submitted version number can never be reused or re-signed on AMO**.
 
 When preparing a new release:
-1. **Synchronize version numbers**:
-   Bump `version` identically across both files:
-   - `firefox/manifest.json`
-   - `package.json`
+1. **Bump versions synchronously**:
+   Run the bump helper to update `package.json`, `firefox/manifest.json`, and `package-lock.json` together:
+   ```bash
+   npm run bump <new-version>
+   ```
+   *(e.g., `npm run bump 0.2.2`)*
 2. **Update CHANGELOG.md**:
    Add a new entry following [Keep a Changelog](https://keepachangelog.com) conventions with the release date.
 3. **Commit and Tag**:
    ```bash
-   git commit -am "chore: release v0.2.0"
-   git tag v0.2.0
+   git commit -am "chore: release v0.2.2"
+   git tag v0.2.2
    git push origin main --tags
    ```
 4. **Automated CI/CD**:
-   The GitHub Actions release workflow triggers on tags matching `v*`, verifies the tag version matches `firefox/manifest.json`, submits the extension for signing on AMO via `web-ext sign`, and creates a GitHub release with the signed `.xpi` artifact attached.
+   The GitHub Actions release workflow triggers on tags matching `v*` (or via manual `workflow_dispatch`):
+   - Verifies the git tag version matches `firefox/manifest.json` and `package.json`.
+   - Runs the full verification suite (`npm run check`: lint, syntax, TypeScript, and unit tests).
+   - Builds the production WebExtension zip artifact.
+   - Submits the extension for signing on AMO via `web-ext sign` (if `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets are configured).
+   - Publishes to npm with provenance (if `NPM_TOKEN` secret is configured).
+   - Creates a GitHub release with release notes and `dist/*` artifacts attached.

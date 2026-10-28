@@ -424,6 +424,29 @@
     return `scrollY=${Math.round(el ? el.scrollTop : window.scrollY)} of ${target.scrollHeight}`;
   }
 
+  function upload(el, files) {
+    const input =
+      el.localName === "input" && el.type === "file" ? el : el.control?.type === "file" ? el.control : el.querySelector('input[type="file"]');
+    if (!input) throw new Error("Element is not a file input, a label for one, or a container with one; try selector 'input[type=file]'");
+    if (input.disabled) throw new Error("File input is disabled");
+    if (!Array.isArray(files) || !files.length) throw new Error("upload needs files");
+    if (files.length > 1 && !input.multiple) throw new Error(`File input takes one file; got ${files.length}`);
+    // Built in content-script scope: a page-compartment FileList is silently dropped by the Xray `files` setter.
+    const dt = new DataTransfer();
+    let bytes = 0;
+    for (const f of files) {
+      const data = Uint8Array.fromBase64(f.data);
+      bytes += data.length;
+      dt.items.add(new File([data], f.name, { type: f.type }));
+    }
+    input.files = dt.files;
+    if (input.files.length !== files.length) throw new Error("The page did not accept the files");
+    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const size = bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
+    return `→ ${files.map((f) => f.name).join(", ")} (${size})`;
+  }
+
   function act(step) {
     const { action } = step;
     const el = resolve(step);
@@ -470,6 +493,9 @@
       }
       case "scroll":
         note = scroll(el, step.value);
+        break;
+      case "upload":
+        note = upload(el, step.files);
         break;
       default:
         throw new Error(`Unknown action ${action}`);

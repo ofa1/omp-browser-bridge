@@ -19,7 +19,7 @@ OMP Browser Bridge links the [`omp` coding agent](https://github.com/can1357/oh-
 ## What It Does
 
 - **Full DOM awareness with refs**: Generates compact text snapshots of web pages where interactive elements receive numbered references (`[1] textbox "Email"`, `[2] button "Submit"`). Page text matching `[digits]` is automatically escaped (`\[digits]`) to prevent ref spoofing.
-- **Batched interactions**: Perform clicks, typing, form fills, keystrokes, and waiting loops in a single call via `firefox_act`.
+- **Batched interactions**: Perform clicks, typing, form fills, keystrokes, file uploads, and waiting loops in a single call via `firefox_act`.
 - **Runs inside your real browser**: Uses your existing cookies, active logins, sessions, and local development domains (`localhost`, dev servers).
 - **Zero cloud dependencies**: All IPC communication occurs strictly on your machine over restricted Unix domain sockets or random-UUID Windows named pipes. The add-on and host make zero network requests and have no telemetry; only the page content you instruct `omp` to read is passed to your configured LLM provider in `omp`.
 - **Dedicated agent tabs**: Tabs opened by `omp` run in the background and group neatly under a purple "omp" tab group, keeping your workspace organized.
@@ -97,7 +97,7 @@ When enabled, the following tools become active in `omp`:
 | `firefox_tabs` | `read` (list)<br>`read` (select agent tab)<br>`exec` (open, activate, close, select user tab) | List tabs, open background agent tabs, select active tab, bring tab to front, or close tabs. |
 | `firefox_navigate` | `exec` | Navigate to a URL, go back/forward, or reload. Returns a fresh page snapshot by default. |
 | `firefox_snapshot` | `read` (agent tabs)<br>`exec` (user tabs) | Read page content as clean text with inline element references (`[N]`). Supports `viewport` or `page` scopes and CSS selectors. |
-| `firefox_act` | `exec` | Batch one or more user interactions: `click`, `dblclick`, `hover`, `focus`, `fill`, `type`, `press`, `select`, `check`, `uncheck`, `submit`, `scroll`, `wait`. |
+| `firefox_act` | `exec` | Batch one or more user interactions: `click`, `dblclick`, `hover`, `focus`, `fill`, `type`, `press`, `select`, `check`, `uncheck`, `submit`, `scroll`, `wait`, `upload`. `upload` sets local files (paths relative to the working directory, up to 50 MB per step) on a file input, its label, or a container holding one; hidden inputs work and no page JavaScript is needed. |
 | `firefox_eval` | `exec`<br>*(Requires popup opt-in)* | Execute async JavaScript within content script scope (`document`, `window`, and `page` = `window.wrappedJSObject` available). Disabled until "Allow page JavaScript" is toggled in the popup. |
 | `firefox_screenshot` | `read` (agent tabs)<br>`exec` (user tabs) | Capture viewport, full-page, or element screenshots as image attachments (works on background tabs). |
 

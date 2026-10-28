@@ -1,4 +1,6 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { FirefoxBridge, getSocketDir } from "./client.ts";
 import { checkHostStatus, installHost, uninstallHost } from "../scripts/install-host.mjs";
 
@@ -39,6 +41,36 @@ interface Screenshot {
 const TOOL_NAMES = ["firefox_tabs", "firefox_navigate", "firefox_snapshot", "firefox_act", "firefox_eval", "firefox_screenshot"];
 const MAX_OUTPUT = 40_000;
 const STATUS_KEY = "firefox";
+// Firefox caps host→extension messages at 1 MB, so uploads travel in chunks. A multiple of 3 bytes keeps base64 chunks concatenable.
+const UPLOAD_CHUNK_BYTES = 510_000;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MIME_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".csv": "text/csv",
+  ".html": "text/html",
+  ".json": "application/json",
+  ".xml": "application/xml",
+  ".zip": "application/zip",
+  ".gz": "application/gzip",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
 
 // H5: Sanitize tab titles and URLs (remove newlines and control characters)
 function sanitizeText(str: string): string {
@@ -76,6 +108,36 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       if (params.tabId === currentTab && /No tab with id|Invalid tab ID/i.test(String(e))) currentTab = undefined;
       throw e;
     }
+  }
+
+  /** Streams local files to the extension in chunks; returns staging ids for an upload step. */
+  async function stageFiles(files: string[] | undefined, cwd: string, signal?: AbortSignal): Promise<string[]> {
+    if (!files?.length) throw new Error("upload needs files: [paths]");
+    const resolved = await Promise.all(
+      files.map(async (file) => {
+        const full = path.resolve(cwd, file);
+        const stat = await fs.stat(full);
+        if (!stat.isFile()) throw new Error(`upload: ${file} is not a regular file`);
+        return { full, size: stat.size };
+      }),
+    );
+    const total = resolved.reduce((sum, f) => sum + f.size, 0);
+    if (total > MAX_UPLOAD_BYTES) throw new Error(`upload: ${(total / 1048576).toFixed(1)} MB exceeds the ${MAX_UPLOAD_BYTES / 1048576} MB limit per step`);
+    const ids: string[] = [];
+    for (const { full } of resolved) {
+      const data = await fs.readFile(full);
+      const id = crypto.randomUUID();
+      const name = path.basename(full);
+      const type = MIME_TYPES[path.extname(full).toLowerCase()] ?? "application/octet-stream";
+      let offset = 0;
+      do {
+        const chunk = data.subarray(offset, offset + UPLOAD_CHUNK_BYTES).toString("base64");
+        await rpc("stageFile", { id, name, type, data: chunk }, signal);
+        offset += UPLOAD_CHUNK_BYTES;
+      } while (offset < data.length);
+      ids.push(id);
+    }
+    return ids;
   }
 
   function requireTab(tabId: number | undefined): number {
@@ -345,20 +407,23 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       "Run one or more UI steps on a Firefox page in order (batch steps like fill→fill→click in one call). Target elements by snapshot `ref` or CSS `selector`. " +
       "Actions: click, dblclick, hover, focus, fill (replace text), type (append keystrokes), press (value: key like Enter, Tab, Escape, Control+a; target defaults to focused element), " +
       "select (<select>; value = option text/value), check, uncheck, submit (enclosing form), scroll (value: up|down|top|bottom|pixels; page or element), " +
-      "wait (selector/text to appear, or gone:true to disappear, or url substring). Stops at the first failing step. " +
-      "Events are synthetic (isTrusted=false). Confirm with the user before purchases, sends, posts, deletions, or other consequential submits.",
+      "wait (selector/text to appear, or gone:true to disappear, or url substring), " +
+      "upload (files: local paths, relative to the working directory; target a file input, its label, or a container holding one — hidden inputs work, " +
+      "e.g. selector 'input[type=file]'; no page JavaScript needed). Stops at the first failing step. " +
+      "Events are synthetic (isTrusted=false). Confirm with the user before purchases, sends, posts, deletions, uploading private files, or other consequential submits.",
     parameters: z.object({
       tabId,
       steps: z
         .array(
           z.object({
-            action: z.enum(["click", "dblclick", "hover", "focus", "fill", "type", "press", "select", "check", "uncheck", "submit", "scroll", "wait"]),
+            action: z.enum(["click", "dblclick", "hover", "focus", "fill", "type", "press", "select", "check", "uncheck", "submit", "scroll", "wait", "upload"]),
             ref: z.number().int().optional(),
             selector: z.string().optional(),
             value: z.string().optional(),
             text: z.string().optional().describe("wait: text to appear"),
             url: z.string().optional().describe("wait: URL substring"),
             gone: z.boolean().optional().describe("wait: until selector/text disappears"),
+            files: z.array(z.string()).optional().describe("upload: local file paths"),
             timeoutMs: z.number().int().optional().describe("wait timeout (default 10000)"),
           }),
         )
@@ -368,10 +433,14 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     }),
     defaultInactive: true,
     approval: "exec",
-    async execute(_id, params, signal) {
+    async execute(_id, params, signal, _onUpdate, ctx) {
       const id = requireTab(params.tabId);
+      const steps = [];
+      for (const step of params.steps) {
+        steps.push(step.action === "upload" ? { ...step, files: await stageFiles(step.files, ctx.cwd, signal) } : step);
+      }
       const waitBudget = params.steps.reduce((sum, s) => sum + (s.timeoutMs ?? 10_000) + 15_000, 0);
-      const res = await rpc<ActResult>("act", { tabId: id, steps: params.steps }, signal, waitBudget + 10_000);
+      const res = await rpc<ActResult>("act", { tabId: id, steps }, signal, waitBudget + 10_000);
       const lines = res.steps.map((s, i) => `${i + 1}. ${s}`);
       if (res.error) lines.push(`✗ ${res.error}`);
       const cleanTitle = sanitizeText(res.tab.title || "");

@@ -25,6 +25,10 @@ browser.storage.onChanged.addListener((changes, area) => {
 const agentTabs = new Set();
 const groupByWindow = new Map();
 const activity = []; // in-memory ring buffer (max 50)
+// Upload staging: omp streams files in base64 chunks (native messaging caps each message at 1 MB).
+const staged = new Map(); // id -> { name, type, parts: string[], at }
+const STAGE_TTL_MS = 120_000;
+const MAX_STAGED_CHARS = 72 * 1024 * 1024; // ≈54 MB of file data
 
 function broadcastState() {
   browser.runtime.sendMessage({ type: "state_changed" }).catch(() => {
@@ -248,7 +252,9 @@ async function onHostMessage(msg) {
   if (msg.type !== "request") return;
 
   const isPing = msg.method === "ping";
-  const summary = isPing ? "" : summarizeMethod(msg.method, msg.params);
+  // Chunk transfers are part of the following act call; don't flood the activity log with them.
+  const quiet = isPing || msg.method === "stageFile";
+  const summary = quiet ? "" : summarizeMethod(msg.method, msg.params);
   let reply;
   try {
     const fn = Object.hasOwn(methods, msg.method) ? methods[msg.method] : null;
@@ -256,13 +262,13 @@ async function onHostMessage(msg) {
     if (paused && !isPing) throw new Error(PAUSE_ERROR);
     const result = await fn(msg.params || {});
     reply = { type: "response", id: msg.id, ok: true, result };
-    if (!isPing) {
+    if (!quiet) {
       recordActivity(msg.method, summary, true);
     }
   } catch (e) {
     const errorMsg = String(e?.message || e);
     reply = { type: "response", id: msg.id, ok: false, error: errorMsg };
-    if (!isPing) {
+    if (!quiet) {
       recordActivity(msg.method, summary, false, errorMsg);
     }
   }
@@ -307,6 +313,50 @@ async function sendTab(tabId, op, args, timeoutMs = 15000) {
   if (!res) throw new Error("Page script returned nothing (page may be navigating)");
   if (!res.ok) throw new Error(res.e);
   return res.v;
+}
+
+function takeStaged(ids) {
+  if (!Array.isArray(ids) || !ids.length) throw new Error("upload needs files");
+  return ids.map((id) => {
+    const entry = staged.get(id);
+    if (!entry) throw new Error("Staged upload expired or missing; retry the step");
+    return { name: entry.name, type: entry.type, data: entry.parts.join("") };
+  });
+}
+
+async function runActSteps(tabId, steps, timeoutMs) {
+  const done = [];
+  for (const [i, step] of steps.entries()) {
+    try {
+      if (paused) throw new Error(PAUSE_ERROR);
+      if (step.action === "wait") {
+        await waitFor(tabId, step);
+        done.push(`wait ✓`);
+        continue;
+      }
+      const load = trackLoad(tabId, timeoutMs);
+      let desc;
+      try {
+        desc = step.action === "upload"
+          ? await sendTab(tabId, "act", { ...step, files: takeStaged(step.files) }, 60000)
+          : await sendTab(tabId, "act", step);
+      } catch (e) {
+        if (!isNavigationError(e)) {
+          load.cancel();
+          throw e;
+        }
+        desc = "(page unloaded during action)";
+      }
+      await sleep(200);
+      let note = "";
+      if (load.sawLoading) note = (await load.promise) ? " → page loaded" : " → page still loading";
+      else load.cancel();
+      done.push(`${step.action} ${desc}${note}`.trim());
+    } catch (e) {
+      return { steps: done, error: `step ${i + 1} (${step.action}) failed: ${e.message}`, tab: await tabInfo(tabId) };
+    }
+  }
+  return { steps: done, tab: await tabInfo(tabId) };
 }
 
 // Only eval (when allowed) may use executeScript({ code }).
@@ -457,6 +507,25 @@ const methods = {
     return { version: VERSION, paused, userAgent: navigator.userAgent };
   },
 
+  async stageFile({ id, name, type, data }) {
+    if (typeof id !== "string" || typeof data !== "string") throw new Error("stageFile needs id and data");
+    const now = Date.now();
+    let stagedChars = 0;
+    for (const [key, entry] of staged) {
+      if (now - entry.at > STAGE_TTL_MS) staged.delete(key);
+      else stagedChars += entry.parts.reduce((sum, p) => sum + p.length, 0);
+    }
+    if (stagedChars + data.length > MAX_STAGED_CHARS) throw new Error("Upload too large for the browser bridge (limit ≈54 MB)");
+    let entry = staged.get(id);
+    if (!entry) {
+      entry = { name: String(name || "file"), type: String(type || "application/octet-stream"), parts: [], at: now };
+      staged.set(id, entry);
+    }
+    entry.parts.push(data);
+    entry.at = now;
+    return { parts: entry.parts.length };
+  },
+
   async tabs({ action = "list", tabId, url, active = false, timeoutMs }) {
     switch (action) {
       case "list": {
@@ -498,36 +567,12 @@ const methods = {
   },
 
   async act({ tabId, steps, timeoutMs = 15000 }) {
-    const done = [];
-    for (const [i, step] of steps.entries()) {
-      try {
-        if (paused) throw new Error(PAUSE_ERROR);
-        if (step.action === "wait") {
-          await waitFor(tabId, step);
-          done.push(`wait ✓`);
-          continue;
-        }
-        const load = trackLoad(tabId, timeoutMs);
-        let desc;
-        try {
-          desc = await sendTab(tabId, "act", step);
-        } catch (e) {
-          if (!isNavigationError(e)) {
-            load.cancel();
-            throw e;
-          }
-          desc = "(page unloaded during action)";
-        }
-        await sleep(200);
-        let note = "";
-        if (load.sawLoading) note = (await load.promise) ? " → page loaded" : " → page still loading";
-        else load.cancel();
-        done.push(`${step.action} ${desc}${note}`.trim());
-      } catch (e) {
-        return { steps: done, error: `step ${i + 1} (${step.action}) failed: ${e.message}`, tab: await tabInfo(tabId) };
-      }
+    try {
+      return await runActSteps(tabId, steps, timeoutMs);
+    } finally {
+      // Staged uploads are single-use; drop them even when an earlier step failed.
+      for (const step of steps) if (step.action === "upload") for (const id of step.files || []) staged.delete(id);
     }
-    return { steps: done, tab: await tabInfo(tabId) };
   },
 
   async eval({ tabId, code, args = [], timeoutMs = 15000 }) {

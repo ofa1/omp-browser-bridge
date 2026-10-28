@@ -1,6 +1,6 @@
 {
   "name": "omp-browser-bridge",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Drive your installed Firefox from the omp coding agent via WebExtension and native messaging bridge",
   "type": "module",
   "license": "MIT",

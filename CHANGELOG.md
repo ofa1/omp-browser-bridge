@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-10-28
+
+### Added
+- First-class subframe & iframe support:
+  - `firefox_snapshot`: traverses accessible same-origin iframes with distinct boundary headers (`--- [frame #id] ---`) and ref indexing. Added `frameSelector` parameter to snapshot a target iframe directly.
+  - `firefox_act`: added `frameSelector` to act steps; `resolve()` automatically searches accessible subframes if an element is not found in the root document. Mouse and pointer events dispatch using the subframe's `window` context.
+  - `firefox_eval`: added `frameSelector` to execute scripts directly within an iframe's scope without manual `contentWindow` drilling.
+  - `action: "wait"`: `check()` validates selectors and text within subframes.
+- High-resolution 512x512 brand icon asset (`brand/icon-512.png`).
+
+### Fixed
+- Fixed subtree truncation in `firefox_snapshot`: container elements (`div`, `section`, `article`, etc.) with `tabindex >= 0` are no longer treated as leaf interactive elements if they contain interactive descendants, preventing child elements and iframes from being dropped.
+- Hardened `contenteditable` / rich-text input in `firefox_act`: automatically focuses element, sets DOM selection range, and dispatches synthetic `beforeinput` and `input` events (`inputType: 'insertText'`) for apps like Google Keep and Draft.js.
+- Set `strict_min_version` to `142.0` in `firefox/manifest.json`, eliminating AMO validation warnings for `data_collection_permissions`.
+
 ## [0.2.2] - 2026-10-28
 
 ### Changed

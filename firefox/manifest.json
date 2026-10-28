@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "OMP Browser Bridge",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Lets the omp coding agent browse in this browser through native messaging.",
   "author": "Omair Ahmed",
   "homepage_url": "https://github.com/ofa1/omp-browser-bridge",

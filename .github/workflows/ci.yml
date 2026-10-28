@@ -87,7 +87,7 @@ jobs:
         run: npm run build:addon
 
       - name: Upload extension artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: omp-browser-bridge-addon
           path: dist/*.zip

@@ -386,6 +386,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       mode: z.enum(["page", "interactive"]).optional().describe("page (default): text with inline refs; interactive: refs only"),
       scope: z.enum(["page", "viewport"]).optional(),
       selector: z.string().optional().describe("CSS selector of the subtree to read"),
+      frameSelector: z.string().optional().describe("CSS selector of an iframe to read within (e.g. '#my-iframe')"),
       maxChars: z.number().int().optional().describe("Default 10000"),
       offset: z.number().int().optional().describe("Character offset for paging"),
     }),
@@ -398,7 +399,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       const id = requireTab(params.tabId);
       const snap = await rpc<Snapshot>(
         "snapshot",
-        { tabId: id, mode: params.mode, scope: params.scope, selector: params.selector, maxChars: params.maxChars ?? 10_000, offset: params.offset ?? 0 },
+        { tabId: id, mode: params.mode, scope: params.scope, selector: params.selector, frameSelector: params.frameSelector, maxChars: params.maxChars ?? 10_000, offset: params.offset ?? 0 },
         signal,
       );
       return text(formatSnapshot(snap, id), { tabId: id, url: snap.url });
@@ -424,6 +425,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
             action: z.enum(["click", "dblclick", "hover", "focus", "fill", "type", "press", "select", "check", "uncheck", "submit", "scroll", "wait", "upload"]),
             ref: z.number().int().optional(),
             selector: z.string().optional(),
+            frameSelector: z.string().optional().describe("CSS selector of an iframe containing the target selector"),
             value: z.string().optional(),
             text: z.string().optional().describe("wait: text to appear"),
             url: z.string().optional().describe("wait: URL substring"),
@@ -473,6 +475,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     parameters: z.object({
       code: z.string().describe("Async function body, e.g. `return [...document.querySelectorAll('h2')].map(h => h.textContent)`"),
       args: z.array(z.unknown()).optional(),
+      frameSelector: z.string().optional().describe("CSS selector of an iframe to evaluate within"),
       tabId,
       timeoutMs: z.number().int().optional().describe("Default 15000"),
     }),
@@ -481,7 +484,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const id = requireTab(params.tabId);
       const timeoutMs = params.timeoutMs ?? 15_000;
-      const value = await rpc<unknown>("eval", { tabId: id, code: params.code, args: params.args ?? [], timeoutMs }, signal, timeoutMs + 5000);
+      const value = await rpc<unknown>("eval", { tabId: id, code: params.code, args: params.args ?? [], frameSelector: params.frameSelector, timeoutMs }, signal, timeoutMs + 5000);
       const out = typeof value === "string" ? value : JSON.stringify(value, null, 1);
       return text(out ?? "undefined", { tabId: id });
     },

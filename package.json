@@ -37,7 +37,7 @@
   "scripts": {
     "install-host": "node scripts/install-host.mjs",
     "lint:addon": "web-ext lint --source-dir firefox",
-    "lint:syntax": "node --check host/host.mjs scripts/install-host.mjs scripts/bump-version.mjs scripts/run-tests.mjs firefox/background.js firefox/content.js firefox/popup/popup.js",
+    "lint:syntax": "node --check host/host.mjs scripts/install-host.mjs scripts/bump-version.mjs scripts/run-tests.mjs firefox/background.js firefox/content.js firefox/popup/popup.js tests/content-frame.test.mjs",
     "lint": "npm run lint:addon && npm run lint:syntax",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",

@@ -22,14 +22,10 @@ describe("manifest and package version synchronization", () => {
     );
   });
 
-  it("gecko add-on ID matches DEFAULT_EXTENSION_ID in install-host.mjs", () => {
+  it("gecko add-on ID matches expected literal ID", () => {
     const geckoId = manifest.browser_specific_settings?.gecko?.id;
-    assert.ok(geckoId, "manifest has browser_specific_settings.gecko.id");
-    assert.equal(
-      geckoId,
-      DEFAULT_EXTENSION_ID,
-      `Gecko ID (${geckoId}) does not match DEFAULT_EXTENSION_ID (${DEFAULT_EXTENSION_ID})`
-    );
+    assert.equal(geckoId, "omp-firefox-bridge@omairahmed");
+    assert.equal(DEFAULT_EXTENSION_ID, "omp-firefox-bridge@omairahmed");
   });
 
   it("all files referenced in firefox/manifest.json exist on disk", () => {
@@ -84,17 +80,20 @@ describe("manifest and package version synchronization", () => {
 
   it("amo/metadata.json conforms to AMO submission guidelines", () => {
     const amoMetaPath = path.join(root, "amo", "metadata.json");
-    if (fs.existsSync(amoMetaPath)) {
-      const amoMeta = JSON.parse(fs.readFileSync(amoMetaPath, "utf8"));
-      const categories = Array.isArray(amoMeta.categories)
-        ? amoMeta.categories
-        : amoMeta.categories?.firefox || [];
-      assert.ok(Array.isArray(categories), "categories is an array");
-      assert.equal(
-        categories.length,
-        1,
-        "AMO rejects multiple categories when combined with 'other' — must have exactly 1 category"
-      );
-    }
+    assert.ok(fs.existsSync(amoMetaPath), "amo/metadata.json exists");
+    const amoMeta = JSON.parse(fs.readFileSync(amoMetaPath, "utf8"));
+    const categories = Array.isArray(amoMeta.categories)
+      ? amoMeta.categories
+      : amoMeta.categories?.firefox || [];
+    assert.ok(Array.isArray(categories), "categories is an array");
+    assert.equal(
+      categories.length,
+      1,
+      "AMO rejects multiple categories when combined with 'other' — must have exactly 1 category"
+    );
+    assert.ok(
+      amoMeta.version?.approval_notes && amoMeta.version.approval_notes.length <= 3000,
+      `AMO reviewer notes length (${amoMeta.version?.approval_notes?.length}) exceeds 3000 character limit`
+    );
   });
 });

@@ -6,8 +6,6 @@ import path from "node:path";
 import {
   DEFAULT_EXTENSION_ID,
   resolveRoot,
-  getExtensionId,
-  getPackageVersion,
   getStableHostDir,
   getCandidateManifestPaths,
   getAllManifestLocationsForCleanup,
@@ -31,19 +29,6 @@ describe("install-host metadata helpers", () => {
     assert.ok(fs.existsSync(path.join(root, "firefox", "manifest.json")), "firefox/manifest.json exists in root");
   });
 
-  it("getExtensionId returns gecko ID matching DEFAULT_EXTENSION_ID", () => {
-    const root = resolveRoot();
-    const id = getExtensionId(root);
-    assert.equal(id, DEFAULT_EXTENSION_ID);
-    assert.equal(typeof id, "string");
-    assert.ok(id.includes("@"), "extension id contains @");
-  });
-
-  it("getPackageVersion returns valid semver string from package.json", () => {
-    const root = resolveRoot();
-    const version = getPackageVersion(root);
-    assert.match(version, /^\d+\.\d+\.\d+/);
-  });
 
   it("getStableHostDir honors customDir and falls back to home/.omp/firefox/host", () => {
     const fakeHome = path.join("/tmp", "fake-home");
@@ -170,6 +155,7 @@ describe("isolated host installation and uninstallation lifecycle", () => {
         home: fakeHome,
         customDir: fakeCustomDir,
         silent: true,
+        skipRegistry: true,
       });
 
       assert.equal(installRes.success, true);
@@ -193,6 +179,7 @@ describe("isolated host installation and uninstallation lifecycle", () => {
         home: fakeHome,
         customDir: fakeCustomDir,
         silent: true,
+        skipRegistry: true,
       });
       assert.equal(uninstallRes.success, true);
       assert.ok(!fs.existsSync(installRes.manifestPaths[0]), "manifest removed after uninstall");

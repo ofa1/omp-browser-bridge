@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { isValidEndpointForPid } from "../scripts/install-host.mjs";
+export { isValidEndpointForPid };
 
 export function getSocketDir(): string {
   return process.env.OMP_FIREFOX_DIR || path.join(os.homedir(), ".omp", "firefox");
@@ -43,14 +45,6 @@ async function validateBridgeDir(targetDir: string): Promise<void> {
       throw new Error(`Bridge directory "${targetDir}" has insecure permissions (${(stat.mode & 0o777).toString(8)}). Must not allow group/other access.`);
     }
   }
-}
-
-export function isValidEndpointForPid(pid: number, endpoint: string, baseDir: string = getSocketDir()): boolean {
-  if (isWin) {
-    return /^\\\\\.\\pipe\\omp-firefox-[0-9a-fA-F-]+$/.test(endpoint);
-  }
-  const expectedPath = path.resolve(baseDir, `${pid}.sock`);
-  return path.resolve(endpoint) === expectedPath;
 }
 
 export async function explainBridgeAbsence(hadCandidates: boolean): Promise<string> {

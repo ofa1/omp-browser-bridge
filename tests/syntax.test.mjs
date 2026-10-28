@@ -12,6 +12,7 @@ describe("syntax and format validation", () => {
     "host/host.mjs",
     "scripts/install-host.mjs",
     "scripts/bump-version.mjs",
+    "scripts/run-tests.mjs",
     "firefox/background.js",
     "firefox/content.js",
     "firefox/popup/popup.js",

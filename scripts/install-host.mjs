@@ -40,6 +40,14 @@ export function getPackageVersion(root = resolveRoot()) {
 export function getStableHostDir(customDir, home = os.homedir()) {
   return path.join(customDir || path.join(home, ".omp", "firefox"), "host");
 }
+export function isValidEndpointForPid(pid, endpoint, baseDir = path.join(os.homedir(), ".omp", "firefox"), platform = process.platform) {
+  if (platform === "win32") {
+    return /^\\\\\.\\pipe\\omp-firefox-[0-9a-fA-F-]+$/.test(endpoint);
+  }
+  const expectedPath = path.resolve(baseDir, `${pid}.sock`);
+  return path.resolve(endpoint) === expectedPath;
+}
+
 
 export function getCandidateManifestPaths(platform = process.platform, home = os.homedir(), stableDir = getStableHostDir(undefined, home)) {
   if (platform === "darwin") {

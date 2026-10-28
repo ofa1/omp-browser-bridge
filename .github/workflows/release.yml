@@ -17,6 +17,9 @@ jobs:
   sign-and-release:
     name: Sign Addon & Create GitHub Release
     runs-on: ubuntu-latest
+    env:
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
 
     steps:
       - name: Checkout repository
@@ -52,9 +55,6 @@ jobs:
 
       - name: Validate AMO credentials for tag release
         if: github.ref_type == 'tag' && (env.AMO_JWT_ISSUER == '' || env.AMO_JWT_SECRET == '')
-        env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           echo "::error::Tag release requires AMO_JWT_ISSUER and AMO_JWT_SECRET secrets for signing."
           exit 1
@@ -75,9 +75,6 @@ jobs:
 
       - name: Submit WebExtension to AMO for signing (listed channel)
         if: env.AMO_JWT_ISSUER != '' && env.AMO_JWT_SECRET != ''
-        env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           npx web-ext sign \
             --channel listed \

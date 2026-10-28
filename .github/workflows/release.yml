@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -45,8 +49,8 @@ jobs:
             exit 1
           fi
 
-      - name: Lint WebExtension
-        run: npx web-ext lint --source-dir firefox --self-hosted=false
+      - name: Run complete verification suite
+        run: npm run check
 
       - name: Sign WebExtension on AMO (listed channel)
         env:

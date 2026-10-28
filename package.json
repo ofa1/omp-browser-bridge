@@ -37,11 +37,28 @@
   "scripts": {
     "install-host": "node scripts/install-host.mjs",
     "lint:addon": "web-ext lint --source-dir firefox",
+    "lint:syntax": "node --check host/host.mjs scripts/install-host.mjs firefox/background.js firefox/content.js firefox/popup/popup.js",
+    "lint": "npm run lint:addon && npm run lint:syntax",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm test",
     "dev": "web-ext run --source-dir firefox --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url about:blank",
     "build:addon": "web-ext build --source-dir firefox --artifacts-dir dist --overwrite-dest",
+    "build": "npm run build:addon",
+    "pack:check": "npm pack --dry-run",
     "sign": "web-ext sign --source-dir firefox --artifacts-dir dist --channel unlisted"
   },
+  "peerDependencies": {
+    "@oh-my-pi/pi-coding-agent": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@oh-my-pi/pi-coding-agent": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
     "web-ext": "^8.0.0"
   }
 }

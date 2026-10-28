@@ -210,12 +210,17 @@ omp plugin link .
 # Run in an isolated development Firefox profile
 npm run dev
 
-# Run add-on linter
-npm run lint:addon
+# Run typechecking
+npm run typecheck
+
+# Run automated test suite
+npm test
+
+# Run full verification check (lint, typecheck, tests)
+npm run check
 
 # Build production add-on zip
-npm run build:addon
-```
+npm run build
 
 ### Repository Layout
 
@@ -235,6 +240,8 @@ omp-browser-bridge/
 │   └── client.ts
 ├── scripts/             # Host installer & setup utility
 │   └── install-host.mjs
+├── tests/               # Native Node.js test suite (IPC, protocol, install, manifests)
+├── tsconfig.json        # TypeScript configuration
 └── package.json
 ```
 

@@ -64,24 +64,37 @@ npm run dev
 > npx web-ext run --source-dir firefox --firefox <path-to-firefox> --start-url about:blank
 > ```
 
-### Linting and Code Quality
+### Testing and Code Quality
 
-Run WebExtension lint checks:
+Run the full verification suite (lint, syntax check, TypeScript typecheck, unit tests):
 ```bash
-npm run lint:addon
+npm run check
 ```
 
-Run syntax checks across scripts and host code:
+Run the automated unit and integration tests:
 ```bash
-node --check host/host.mjs
-node --check scripts/install-host.mjs
+npm test
 ```
 
-Build the production zip artifact:
+Run TypeScript type checking across the extension code:
 ```bash
-npm run build:addon
+npm run typecheck
 ```
 
+Run WebExtension and JavaScript syntax linting:
+```bash
+npm run lint
+```
+
+Build the production WebExtension zip artifact:
+```bash
+npm run build
+```
+
+Verify npm package tarball contents:
+```bash
+npm run pack:check
+```
 ## Cutting an AMO & GitHub Release
 
 Mozilla Add-ons (AMO) requires strict version increments: **a published or submitted version number can never be reused or re-signed on AMO**.

@@ -1,0 +1,16 @@
+# Set default behavior to force LF line endings
+* text=auto eol=lf
+
+# Windows batch files require CRLF
+*.bat text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.xpi binary
+*.zst binary

@@ -15,8 +15,7 @@
 
 ## Testing & Verification
 <!-- Describe the tests you ran to verify your changes. Include OS and Firefox versions. -->
-- [ ] `npm run lint:addon` passes without warnings/errors
-- [ ] `node --check host/host.mjs` and `node --check scripts/install-host.mjs` pass
+- [ ] `npm run check` passes without warnings/errors (lint, syntax, typecheck, tests)
 - [ ] Tested in local Firefox profile (`npm run dev` or `/firefox setup`)
 - [ ] Verified commands and tools in omp (`/firefox on`, `/firefox status`, etc.)
 

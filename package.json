@@ -1,0 +1,47 @@
+{
+  "name": "omp-browser-bridge",
+  "version": "0.2.0",
+  "description": "Drive your installed Firefox from the omp coding agent via WebExtension and native messaging bridge",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ofa1/omp-browser-bridge.git"
+  },
+  "homepage": "https://github.com/ofa1/omp-browser-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/ofa1/omp-browser-bridge/issues"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "firefox",
+    "browser-automation",
+    "webextension",
+    "native-messaging",
+    "ai-agent"
+  ],
+  "files": [
+    "omp",
+    "host/host.mjs",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "omp": {
+    "extensions": [
+      "./omp/index.ts"
+    ]
+  },
+  "scripts": {
+    "install-host": "node scripts/install-host.mjs",
+    "lint:addon": "web-ext lint --source-dir firefox",
+    "dev": "web-ext run --source-dir firefox --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url about:blank",
+    "build:addon": "web-ext build --source-dir firefox --artifacts-dir dist --overwrite-dest",
+    "sign": "web-ext sign --source-dir firefox --artifacts-dir dist --channel unlisted"
+  },
+  "devDependencies": {
+    "web-ext": "^8.0.0"
+  }
+}

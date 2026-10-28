@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an idea or feature enhancement for OMP Browser Bridge
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea or enhancement for OMP Browser Bridge? We'd love to hear it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear description of what the problem is.
+      placeholder: I'm always frustrated when...
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution or Feature
+      description: Describe what you would like to happen and how you envision it working.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or tool API suggestions here.

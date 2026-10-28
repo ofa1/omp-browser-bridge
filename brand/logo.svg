@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="45%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#5B21B6"/>
+    </linearGradient>
+    <linearGradient id="markGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#EDE9FE"/>
+    </linearGradient>
+    <filter id="markShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="3.5" flood-color="#1F1A2E" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <!-- Background Squircle -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="4.5" y="4.5" width="119" height="119" rx="27.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="1.2"/>
+  <!-- Centered Mark (scaled 6.5x from 16x16) -->
+  <g transform="translate(12, 13) scale(6.5)" filter="url(#markShadow)">
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M 2.25 2 C 1.84 2 1.5 2.34 1.5 2.75 V 3.25 C 1.5 3.66 1.84 4 2.25 4 H 3.5 V 14 H 5.5 V 7.7 C 5.5 6.32 6.62 5.2 8 5.2 C 9.38 5.2 10.5 6.32 10.5 7.7 V 10.5 C 10.5 12.43 12.07 14 13.6 14 C 14.2 14 14.5 13.6 14.5 13.1 C 14.5 12.6 14.2 12.2 13.6 12.2 C 12.8 12.2 12.3 11.5 12.3 10.5 V 4 H 13.75 C 14.16 4 14.5 3.66 14.5 3.25 V 2.75 C 14.5 2.34 14.16 2 13.75 2 Z" fill="url(#markGrad)"/>
+  </g>
+</svg>

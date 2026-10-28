@@ -1,0 +1,70 @@
+name: Bug report
+description: Create a report to help us improve OMP Browser Bridge
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please provide as much detail as possible.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: When I run /firefox on, the bridge fails to connect...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      value: |
+        1. Run `/firefox setup`
+        2. Open Firefox
+        3. Run `/firefox on`
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A concise explanation of what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: status-output
+    attributes:
+      label: Output of `/firefox status`
+      description: Paste the exact output of running `/firefox status` in omp.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating System
+      placeholder: e.g. macOS Sonoma 14.5, Ubuntu 24.04 (deb/snap/flatpak), Windows 11
+    validations:
+      required: true
+  - type: input
+    id: firefox-version
+    attributes:
+      label: Firefox Version
+      placeholder: e.g. Firefox 139.0.1 (standard release / Developer Edition / Flatpak / Snap)
+    validations:
+      required: true
+  - type: input
+    id: omp-version
+    attributes:
+      label: omp Version & Runtime
+      placeholder: e.g. omp v0.4.0, Node.js v22.14.0
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Console Output
+      description: Firefox browser console errors (`Ctrl+Shift+J` / `Cmd+Shift+J`) or host logs.
+      render: text

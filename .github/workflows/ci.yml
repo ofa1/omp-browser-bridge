@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-and-build:
+    name: Lint, Syntax & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint WebExtension
+        run: npx web-ext lint --source-dir firefox --self-hosted=false
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check host/host.mjs
+          node --check scripts/install-host.mjs
+
+      - name: Build WebExtension zip
+        run: npx web-ext build --source-dir firefox --artifacts-dir dist --overwrite-dest
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omp-browser-bridge-addon
+          path: dist/*.zip
+          retention-days: 14

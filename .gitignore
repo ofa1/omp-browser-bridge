@@ -1,0 +1,10 @@
+node_modules/
+dist/
+host/omp-firefox-host
+host/omp-firefox-host.bat
+*.sock
+*.pipe
+*.log
+.web-extension-id
+.amo-upload-uuid
+tmp/

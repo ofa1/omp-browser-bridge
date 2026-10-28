@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OMP Browser Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="header">
+      <div class="brand">
+        <img class="brand-icon" src="../icons/icon.svg" alt="" width="20" height="20">
+        <h1 class="brand-title">OMP Browser Bridge</h1>
+      </div>
+      <span class="version-badge" id="version" aria-label="Version">v0.2.0</span>
+    </header>
+
+    <main class="content">
+      <!-- Status Card -->
+      <section class="card status-card" id="status-card" aria-live="polite">
+        <div class="status-top">
+          <span class="status-dot" id="status-dot" aria-hidden="true"></span>
+          <h2 class="status-title" id="status-title">Checking status…</h2>
+        </div>
+        <p class="status-desc" id="status-desc">Connecting to background service…</p>
+        
+        <div class="setup-hint" id="setup-hint" hidden>
+          <div class="setup-hint-cmd">
+            <span>Run</span>
+            <code>/firefox setup</code>
+            <span>in omp</span>
+          </div>
+          <a class="setup-link" id="setup-doc-link" href="https://github.com/ofa1/omp-browser-bridge#setup" target="_blank" rel="noopener">
+            Setup guide ↗
+          </a>
+        </div>
+      </section>
+
+      <!-- Primary Control: Pause / Resume -->
+      <section class="control-row">
+        <div class="control-text">
+          <label class="control-label" id="pause-toggle-label" for="pause-toggle">Agent Control</label>
+          <span class="control-subtext" id="pause-toggle-subtext">Active — omp can inspect and drive tabs</span>
+        </div>
+        <label class="switch" title="Toggle agent control">
+          <input type="checkbox" id="pause-toggle" role="switch" aria-labelledby="pause-toggle-label" checked>
+          <span class="slider" aria-hidden="true"></span>
+        </label>
+      </section>
+
+      <!-- Eval Opt-in: Allow page JavaScript -->
+      <section class="control-row">
+        <div class="control-text">
+          <label class="control-label" id="eval-toggle-label" for="eval-toggle">Allow page JavaScript</label>
+          <span class="control-subtext" id="eval-toggle-subtext">Lets omp run custom JavaScript in pages (firefox_eval). Off by default.</span>
+        </div>
+        <label class="switch" title="Toggle page JavaScript execution">
+          <input type="checkbox" id="eval-toggle" role="switch" aria-labelledby="eval-toggle-label">
+          <span class="slider" aria-hidden="true"></span>
+        </label>
+      </section>
+
+      <!-- Agent Tabs -->
+      <section class="panel-section tabs-section">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <h3 class="panel-title">Agent Tabs</h3>
+            <span class="panel-badge" id="tabs-count" aria-label="Tab count">0</span>
+          </div>
+          <button type="button" class="btn-action danger" id="close-tabs-btn" disabled>Close agent tabs</button>
+        </div>
+        <ul class="tab-list" id="tab-list" role="list"></ul>
+        <div class="empty-state" id="tabs-empty">No tabs managed by omp</div>
+      </section>
+
+      <!-- Recent Activity -->
+      <section class="panel-section activity-section">
+        <div class="panel-header">
+          <h3 class="panel-title">Recent Activity</h3>
+        </div>
+        <ul class="activity-list" id="activity-list" role="list"></ul>
+        <div class="empty-state" id="activity-empty">No recent activity</div>
+      </section>
+    </main>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

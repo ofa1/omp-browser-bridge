@@ -8,3 +8,4 @@ host/omp-firefox-host.bat
 .web-extension-id
 .amo-upload-uuid
 tmp/
+.DS_Store

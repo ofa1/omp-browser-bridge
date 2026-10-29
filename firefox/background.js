@@ -11,14 +11,24 @@ const PAUSE_ERROR = "The user paused agent control in Firefox (OMP Browser Bridg
 let hostConnected = false;
 let lastDisconnectError = null;
 
-browser.storage.local.get({ allowEval: false }).then((res) => {
+browser.storage.local.get({ allowEval: false, paused: false }).then((res) => {
   allowEval = !!res.allowEval;
+  paused = !!res.paused;
+  updateBadge();
+  broadcastState();
 }).catch(() => {});
 
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && "allowEval" in changes) {
-    allowEval = !!changes.allowEval.newValue;
-    broadcastState();
+  if (area === "local") {
+    if ("allowEval" in changes) {
+      allowEval = !!changes.allowEval.newValue;
+      broadcastState();
+    }
+    if ("paused" in changes) {
+      paused = !!changes.paused.newValue;
+      updateBadge();
+      broadcastState();
+    }
   }
 });
 
@@ -113,6 +123,7 @@ function recordActivity(method, summary, ok, error) {
 browser.commands.onCommand.addListener((command) => {
   if (command === "toggle-pause") {
     paused = !paused;
+    browser.storage.local.set({ paused }).catch(() => {});
     updateBadge();
     broadcastState();
   }
@@ -151,7 +162,7 @@ async function getState() {
   };
 }
 
-browser.runtime.onMessage.addListener(async (msg, sender) => {
+browser.runtime.onMessage.addListener((msg, sender) => {
   const popupPrefix = browser.runtime.getURL("popup/");
   if (
     sender.id !== browser.runtime.id ||
@@ -162,19 +173,21 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
     return;
   }
   if (!msg || typeof msg.type !== "string") return;
-  switch (msg.type) {
-    case "state":
-      return getState();
-    case "setPaused":
-      paused = typeof msg.paused === "boolean" ? msg.paused : !paused;
-      updateBadge();
-      broadcastState();
-      return { ok: true, paused };
-    case "setAllowEval":
-      allowEval = !!msg.allowEval;
-      await browser.storage.local.set({ allowEval });
-      broadcastState();
-      return { ok: true, allowEval };
+  return (async () => {
+    switch (msg.type) {
+      case "state":
+        return getState();
+      case "setPaused":
+        paused = typeof msg.paused === "boolean" ? msg.paused : !paused;
+        await browser.storage.local.set({ paused });
+        updateBadge();
+        broadcastState();
+        return { ok: true, paused };
+      case "setAllowEval":
+        allowEval = !!msg.allowEval;
+        await browser.storage.local.set({ allowEval });
+        broadcastState();
+        return { ok: true, allowEval };
     case "closeAgentTabs": {
       const ids = Array.from(agentTabs);
       agentTabs.clear();
@@ -202,9 +215,10 @@ browser.runtime.onMessage.addListener(async (msg, sender) => {
         return { ok: false, error: String(e?.message || e) };
       }
     }
-    default:
-      return { ok: false, error: `Unknown message type: ${msg.type}` };
-  }
+      default:
+        return { ok: false, error: `Unknown message type: ${msg.type}` };
+    }
+  })();
 });
 
 function connect() {
@@ -272,7 +286,17 @@ async function onHostMessage(msg) {
       recordActivity(msg.method, summary, false, errorMsg);
     }
   }
-  port?.postMessage(reply);
+  try {
+    port?.postMessage(reply);
+  } catch (err) {
+    const sendErr = `Extension response failed to send (payload may exceed 1 MB limit): ${err?.message || err}`;
+    if (!quiet) {
+      recordActivity(msg.method, summary, false, sendErr);
+    }
+    try {
+      port?.postMessage({ type: "response", id: msg.id, ok: false, error: sendErr });
+    } catch {}
+  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -409,15 +433,20 @@ function trackLoad(tabId, timeoutMs) {
     if (info.status === "loading") sawLoading = true;
     else if (info.status === "complete" && sawLoading && tab.url !== "about:blank") finish(true);
   };
+  const onRemoved = (id) => {
+    if (id === tabId) finish(false);
+  };
   const timer = setTimeout(() => finish(false), timeoutMs);
   let idle;
   function finish(loaded) {
     clearTimeout(timer);
     clearTimeout(idle);
     browser.tabs.onUpdated.removeListener(listener);
+    browser.tabs.onRemoved.removeListener(onRemoved);
     settle(loaded);
   }
   browser.tabs.onUpdated.addListener(listener, { tabId, properties: ["status"] });
+  browser.tabs.onRemoved.addListener(onRemoved);
   return {
     promise,
     get sawLoading() {
@@ -461,6 +490,14 @@ async function groupAgentTab(tabId) {
     console.warn("omp: tab grouping failed", e);
   }
 }
+
+browser.tabs.onCreated.addListener((tab) => {
+  if (tab.id !== undefined && tab.openerTabId !== undefined && agentTabs.has(tab.openerTabId)) {
+    agentTabs.add(tab.id);
+    groupAgentTab(tab.id).catch(() => {});
+    broadcastState();
+  }
+});
 
 browser.tabs.onRemoved.addListener((id) => {
   if (agentTabs.delete(id)) {
@@ -601,14 +638,24 @@ const methods = {
     return executeEval(tabId, code, args, frameSelector, timeoutMs);
   },
 
-  async screenshot({ tabId, fullPage, ref, selector, format = "png", quality = 80, scale = 1 }) {
+  async screenshot({ tabId, fullPage, ref, selector, frameSelector, format = "png", quality = 80, scale = 1 }) {
     let rect;
-    if (ref !== undefined || selector) rect = await sendTab(tabId, "rectOf", { ref, selector });
+    if (ref !== undefined || selector) rect = await sendTab(tabId, "rectOf", { ref, selector, frameSelector });
     else if (fullPage) rect = await sendTab(tabId, "pageRect");
-    const opts = { format, scale };
+    let opts = { format, scale };
     if (format === "jpeg") opts.quality = quality;
     if (rect) opts.rect = rect;
-    const dataUrl = await browser.tabs.captureTab(tabId, opts);
+    let dataUrl = await browser.tabs.captureTab(tabId, opts);
+    if (dataUrl.length > 900_000) {
+      opts = { format: "jpeg", quality: Math.min(quality, 70), scale };
+      if (rect) opts.rect = rect;
+      dataUrl = await browser.tabs.captureTab(tabId, opts);
+      if (dataUrl.length > 900_000) {
+        opts = { format: "jpeg", quality: Math.min(quality, 70), scale: Math.min(scale, 0.5) };
+        if (rect) opts.rect = rect;
+        dataUrl = await browser.tabs.captureTab(tabId, opts);
+      }
+    }
     return { dataUrl, rect: rect || null };
   },
 };

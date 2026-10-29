@@ -132,6 +132,10 @@ process.stdin.on("data", (chunk) => {
     } catch {
       continue;
     }
+    if (msg.type === "hello") {
+      sendToExtension({ type: "clients", count: clients.size });
+      continue;
+    }
     if (msg.type !== "response") continue;
     const p = pending.get(msg.id);
     if (!p) continue;

@@ -96,7 +96,11 @@ export default function firefoxExtension(pi: ExtensionAPI) {
 
   async function getBridge(): Promise<FirefoxBridge> {
     if (!enabled) throw new Error("Firefox control is off; the user enables it with /firefox on");
-    if (!bridge || bridge.closed) bridge = await FirefoxBridge.connect();
+    if (!bridge || bridge.closed) {
+      agentTabs.clear();
+      currentTab = undefined;
+      bridge = await FirefoxBridge.connect();
+    }
     return bridge;
   }
 
@@ -145,7 +149,6 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     if (id === undefined) {
       throw new Error('No current tab. Use firefox_navigate with a url (opens an agent tab) or firefox_tabs {action:"select", tabId}.');
     }
-    currentTab = id;
     return id;
   }
 
@@ -323,8 +326,16 @@ export default function firefoxExtension(pi: ExtensionAPI) {
         return text(tabs.map(tabLine).join("\n"), { count: tabs.length });
       }
       if (action === "select") {
-        const t = noteTab(await rpc<TabInfo>("tabs", { action: "info", tabId: requireTab(params.tabId) }, signal));
+        const id = requireTab(params.tabId);
+        const t = noteTab(await rpc<TabInfo>("tabs", { action: "info", tabId: id }, signal));
+        currentTab = id;
         return text(`Current tab:\n${tabLine(t)}`);
+      }
+      if (action === "activate") {
+        const id = requireTab(params.tabId);
+        const t = noteTab(await rpc<TabInfo>("tabs", { action, tabId: id }, signal));
+        currentTab = id;
+        return text(tabLine(t));
       }
       if (action === "close") {
         const id = params.tabId ?? currentTab;
@@ -366,6 +377,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       } else {
         const id = requireTab(params.tabId);
         tab = noteTab(await rpc<TabInfo>("navigate", { tabId: id, url: params.url, action: params.action, timeoutMs }, signal, timeoutMs + 5000));
+        currentTab = id;
       }
       const head = tab.loaded === false ? `(load not complete after ${timeoutMs}ms)\n` : "";
       if (params.snapshot === false) return text(`${head}${tabLine(tab)}`, { tabId: tab.id });
@@ -402,6 +414,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
         { tabId: id, mode: params.mode, scope: params.scope, selector: params.selector, frameSelector: params.frameSelector, maxChars: params.maxChars ?? 10_000, offset: params.offset ?? 0 },
         signal,
       );
+      currentTab = id;
       return text(formatSnapshot(snap, id), { tabId: id, url: snap.url });
     },
   });
@@ -448,6 +461,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       }
       const waitBudget = params.steps.reduce((sum, s) => sum + (s.timeoutMs ?? 10_000) + 15_000, 0);
       const res = await rpc<ActResult>("act", { tabId: id, steps }, signal, waitBudget + 10_000);
+      currentTab = id;
       const lines = res.steps.map((s, i) => `${i + 1}. ${s}`);
       if (res.error) lines.push(`✗ ${res.error}`);
       const cleanTitle = sanitizeText(res.tab.title || "");
@@ -485,6 +499,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       const id = requireTab(params.tabId);
       const timeoutMs = params.timeoutMs ?? 15_000;
       const value = await rpc<unknown>("eval", { tabId: id, code: params.code, args: params.args ?? [], frameSelector: params.frameSelector, timeoutMs }, signal, timeoutMs + 5000);
+      currentTab = id;
       const out = typeof value === "string" ? value : JSON.stringify(value, null, 1);
       return text(out ?? "undefined", { tabId: id });
     },
@@ -501,6 +516,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       fullPage: z.boolean().optional(),
       ref: z.number().int().optional(),
       selector: z.string().optional(),
+      frameSelector: z.string().optional().describe("CSS selector of an iframe containing the target selector"),
       format: z.enum(["png", "jpeg"]).optional().describe("Default jpeg"),
     }),
     defaultInactive: true,
@@ -511,7 +527,8 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const id = requireTab(params.tabId);
       const format = params.format ?? "jpeg";
-      const shot = await rpc<Screenshot>("screenshot", { tabId: id, fullPage: params.fullPage, ref: params.ref, selector: params.selector, format }, signal);
+      const shot = await rpc<Screenshot>("screenshot", { tabId: id, fullPage: params.fullPage, ref: params.ref, selector: params.selector, frameSelector: params.frameSelector, format }, signal);
+      currentTab = id;
       const comma = shot.dataUrl.indexOf(",");
       const mimeType = shot.dataUrl.slice(5, shot.dataUrl.indexOf(";"));
       const size = shot.rect ? ` ${Math.round(shot.rect.width)}x${Math.round(shot.rect.height)}` : " viewport";

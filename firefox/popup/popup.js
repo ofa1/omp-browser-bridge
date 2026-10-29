@@ -21,7 +21,9 @@ const setupDocLink = document.getElementById("setup-doc-link");
 
 let pollTimer = null;
 let isUpdating = false;
-
+let pendingRefresh = false;
+let lastTabsKey = null;
+let lastActivityKey = null;
 function formatHost(rawUrl) {
   if (!rawUrl) return "";
   try {
@@ -87,6 +89,10 @@ function renderTabs(tabs = []) {
   tabsCount.textContent = String(tabs.length);
   closeTabsBtn.disabled = tabs.length === 0;
 
+  const key = JSON.stringify(tabs);
+  if (key === lastTabsKey) return;
+  lastTabsKey = key;
+
   while (tabList.firstChild) {
     tabList.removeChild(tabList.firstChild);
   }
@@ -146,20 +152,20 @@ function renderTabs(tabs = []) {
 }
 
 function renderActivity(activities = []) {
+  const visible = activities.slice(0, 10);
+  const key = JSON.stringify(visible);
+  if (key === lastActivityKey) return;
+  lastActivityKey = key;
+
   while (activityList.firstChild) {
     activityList.removeChild(activityList.firstChild);
   }
 
-  const visible = activities.slice(0, 10);
   if (visible.length === 0) {
     activityEmpty.hidden = false;
     activityList.hidden = true;
     return;
   }
-
-  activityEmpty.hidden = true;
-  activityList.hidden = false;
-
   for (const item of visible) {
     const li = document.createElement("li");
     li.className = "activity-item";
@@ -196,7 +202,10 @@ function renderActivity(activities = []) {
 }
 
 async function refreshState() {
-  if (isUpdating) return;
+  if (isUpdating) {
+    pendingRefresh = true;
+    return;
+  }
   isUpdating = true;
   try {
     const state = await browser.runtime.sendMessage({ type: "state" });
@@ -209,6 +218,10 @@ async function refreshState() {
     console.warn("Failed to fetch state from background:", e);
   } finally {
     isUpdating = false;
+    if (pendingRefresh) {
+      pendingRefresh = false;
+      refreshState();
+    }
   }
 }
 

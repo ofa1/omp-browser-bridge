@@ -159,26 +159,85 @@
       parts.push(checked ? "checked" : "unchecked");
     }
     const expanded = el.getAttribute("aria-expanded");
-    if (expanded) parts.push(expanded === "true" ? "expanded" : "collapsed");
+    if (expanded) {
+      parts.push(expanded === "true" ? "expanded" : "collapsed");
+    } else if (el.localName === "summary" && el.parentElement?.localName === "details") {
+      parts.push(el.parentElement.open ? "expanded" : "collapsed");
+    }
     if (el.getAttribute("aria-selected") === "true") parts.push("selected");
     if (el.getAttribute("aria-pressed") === "true") parts.push("pressed");
     if (el.disabled || el.getAttribute("aria-disabled") === "true") parts.push("disabled");
     return parts.join(" ");
   }
 
+  function querySelectorDeep(root, selector) {
+    if (!root) return null;
+    try {
+      const found = root.querySelector(selector);
+      if (found) return found;
+    } catch {}
+
+    function search(node) {
+      const shadow = node.openOrClosedShadowRoot || node.shadowRoot;
+      if (shadow) {
+        try {
+          const match = shadow.querySelector(selector);
+          if (match) return match;
+        } catch {}
+        for (const child of shadow.children) {
+          const res = search(child);
+          if (res) return res;
+        }
+      }
+      for (const child of node.children) {
+        const res = search(child);
+        if (res) return res;
+      }
+      return null;
+    }
+
+    if (root.nodeType === 9 || root.nodeType === 11) {
+      for (const child of root.children) {
+        const res = search(child);
+        if (res) return res;
+      }
+      return null;
+    }
+    return search(root);
+  }
+
+  function textContentDeep(root) {
+    if (!root) return "";
+    let text = root.innerText || root.textContent || "";
+    function walkShadows(node) {
+      const shadow = node.openOrClosedShadowRoot || node.shadowRoot;
+      if (shadow) {
+        text += " " + (shadow.innerText || shadow.textContent || "");
+        for (const child of shadow.children) walkShadows(child);
+      }
+      for (const child of node.children) walkShadows(child);
+    }
+    if (root.nodeType === 9 || root.nodeType === 11) {
+      for (const child of root.children) walkShadows(child);
+    } else if (root.nodeType === 1) {
+      walkShadows(root);
+    }
+    return text;
+  }
+
   function snapshot({ mode = "page", scope = "page", selector, frameSelector, maxChars = 10000, offset = 0 } = {}) {
-    let root = document.body;
+    let root = document.body || document.documentElement;
     if (frameSelector) {
       const frame = document.querySelector(frameSelector);
       if (!frame) throw new Error(`No frame matches frameSelector ${frameSelector}`);
       try {
-        root = frame.contentDocument?.body || root;
+        root = frame.contentDocument?.body || frame.contentDocument?.documentElement || root;
       } catch {
         throw new Error(`Cannot access frame document for ${frameSelector} (cross-origin or sandboxed)`);
       }
     }
     if (selector) {
-      root = root.querySelector(selector);
+      root = querySelectorDeep(root, selector);
       if (!root) throw new Error(`No element matches selector ${selector}`);
     }
     for (const [id, el] of byId) if (!el.isConnected) byId.delete(id);
@@ -222,6 +281,7 @@
       const el = node;
       const tag = el.localName;
       if (SKIP.has(tag) || el.getAttribute("aria-hidden") === "true") return;
+      if (el.inert || el.hasAttribute("inert")) return;
       if (!visible(el) || outOfView(el)) return;
 
       if (tag === "iframe" || tag === "frame") {
@@ -230,10 +290,11 @@
           doc = el.contentDocument;
         } catch {}
         flush();
-        if (doc?.body) {
+        const frameBody = doc?.body || doc?.documentElement;
+        if (frameBody) {
           const frameLabel = el.id ? `#${el.id}` : (el.name ? `[name="${el.name}"]` : shortUrl(el.src || ""));
           if (!onlyRefs) lines.push(`--- [frame ${frameLabel}] ---`);
-          walk(doc.body);
+          walk(frameBody);
           if (!onlyRefs) lines.push(`--- [end frame ${frameLabel}] ---`);
         } else {
           lines.push(`[iframe ${shortUrl(el.src)}]`);
@@ -296,17 +357,18 @@
         if (!frame) throw new Error(`No frame matches frameSelector ${frameSelector}`);
         try {
           root = frame.contentDocument || root;
+          if (!frame.contentDocument) throw new Error(`Cannot access frame document for ${frameSelector} (cross-origin or sandboxed)`);
         } catch {
           throw new Error(`Cannot access frame document for ${frameSelector} (cross-origin or sandboxed)`);
         }
       }
-      let el = root.querySelector(selector);
+      let el = querySelectorDeep(root, selector);
       if (!el && !frameSelector) {
         for (const frame of document.querySelectorAll("iframe, frame")) {
           try {
             const doc = frame.contentDocument;
             if (doc) {
-              el = doc.querySelector(selector);
+              el = querySelectorDeep(doc, selector);
               if (el) break;
             }
           } catch {}
@@ -316,6 +378,10 @@
       return el;
     }
     return null;
+  }
+
+  function eventCtor(el, name) {
+    return el?.ownerDocument?.defaultView?.[name] || window[name] || globalThis[name];
   }
 
   function mouse(el, type, extra = {}) {
@@ -354,13 +420,13 @@
   }
 
   function input(el, inputType, data) {
-    const win = el.ownerDocument.defaultView || window;
-    const Ctor = win.InputEvent || InputEvent;
+    const Ctor = eventCtor(el, "InputEvent");
     el.dispatchEvent(new Ctor("input", { bubbles: true, composed: true, inputType, data }));
   }
 
   function fill(el, value) {
     el.focus();
+    const EventCtor = eventCtor(el, "Event");
     if (el.isContentEditable) {
       const doc = el.ownerDocument;
       const win = doc.defaultView || window;
@@ -379,17 +445,17 @@
       if (!ok) {
         el.textContent = value;
       }
-      const InputEventCtor = win.InputEvent || InputEvent;
+      const InputEventCtor = eventCtor(el, "InputEvent");
       el.dispatchEvent(new InputEventCtor("beforeinput", { bubbles: true, cancelable: true, composed: true, inputType: "insertText", data: value }));
       input(el, "insertText", value);
-      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new EventCtor("change", { bubbles: true }));
       return;
     }
     if (!("value" in el) || el.localName === "select") throw new Error("Element is not a text field; use click/select");
     // Xray assignment hits the native setter, so framework value trackers (React) see a change.
     el.value = value;
     input(el, "insertReplacementText", value);
-    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new EventCtor("change", { bubbles: true }));
   }
 
   function keyInit(key, mods) {
@@ -419,37 +485,85 @@
 
   function typeText(el, text) {
     el.focus();
+    const KeyboardEventCtor = eventCtor(el, "KeyboardEvent");
+    const EventCtor = eventCtor(el, "Event");
     for (const ch of text) {
       const init = keyInit(ch, new Set());
-      if (el.dispatchEvent(new KeyboardEvent("keydown", init))) {
-        el.dispatchEvent(new KeyboardEvent("keypress", init));
+      if (el.dispatchEvent(new KeyboardEventCtor("keydown", init))) {
+        el.dispatchEvent(new KeyboardEventCtor("keypress", init));
         insertChar(el, ch);
       }
-      el.dispatchEvent(new KeyboardEvent("keyup", init));
+      el.dispatchEvent(new KeyboardEventCtor("keyup", init));
     }
-    if (!el.isContentEditable) el.dispatchEvent(new Event("change", { bubbles: true }));
+    if (!el.isContentEditable) el.dispatchEvent(new EventCtor("change", { bubbles: true }));
   }
 
-  function focusables() {
-    return [...document.querySelectorAll("a[href],button,input,select,textarea,[tabindex],[contenteditable='true']")].filter(
+  function focusables(doc = document) {
+    return [...doc.querySelectorAll("a[href],button,input,select,textarea,[tabindex],[contenteditable='true']")].filter(
       (e) => !e.disabled && e.tabIndex >= 0 && visible(e),
     );
   }
 
   function press(el, combo) {
     if (!combo) throw new Error("press needs value, e.g. \"Enter\" or \"Control+a\"");
-    const parts = String(combo).split("+");
-    const key = parts.pop() || "+";
+    const raw = String(combo);
+    let parts;
+    let key;
+    if (raw === "+") {
+      key = "+";
+      parts = [];
+    } else if (raw.endsWith("++")) {
+      parts = raw.slice(0, -2).split("+");
+      key = "+";
+    } else {
+      parts = raw.split("+");
+      key = parts.pop() || "+";
+    }
+
     const mods = new Set(parts.map((p) => p.toLowerCase()));
+
+    // Normalize common key aliases
+    let codeOverride = null;
+    if (key.toLowerCase() === "space" || key.toLowerCase() === "spacebar") {
+      key = " ";
+      codeOverride = "Space";
+    } else if (key.toLowerCase() === "esc") {
+      key = "Escape";
+    } else if (key.toLowerCase() === "del") {
+      key = "Delete";
+    } else if (key.toLowerCase() === "up") {
+      key = "ArrowUp";
+    } else if (key.toLowerCase() === "down") {
+      key = "ArrowDown";
+    } else if (key.toLowerCase() === "left") {
+      key = "ArrowLeft";
+    } else if (key.toLowerCase() === "right") {
+      key = "ArrowRight";
+    }
+
     const init = keyInit(key, mods);
-    const proceed = el.dispatchEvent(new KeyboardEvent("keydown", init));
-    if (proceed && key.length === 1) el.dispatchEvent(new KeyboardEvent("keypress", init));
+    if (codeOverride) init.code = codeOverride;
+
+    const KeyboardEventCtor = eventCtor(el, "KeyboardEvent");
+    const proceed = el.dispatchEvent(new KeyboardEventCtor("keydown", init));
+    if (proceed && key.length === 1) el.dispatchEvent(new KeyboardEventCtor("keypress", init));
     if (proceed) {
       if (key === "Enter") {
         if (el.localName === "input" && el.form) el.form.requestSubmit();
         else if (["a", "button", "summary"].includes(el.localName) || roleOf(el) === "button") el.click();
+      } else if (key === " ") {
+        if (
+          ["button", "summary"].includes(el.localName) ||
+          (el.localName === "input" && ["checkbox", "radio", "button", "submit", "reset"].includes(el.type)) ||
+          ["button", "checkbox", "radio", "switch"].includes(roleOf(el))
+        ) {
+          el.click();
+        } else if ((el.isContentEditable || "value" in el) && !init.ctrlKey && !init.metaKey) {
+          insertChar(el, " ");
+        }
       } else if (key === "Tab") {
-        const list = focusables();
+        const doc = el.ownerDocument || document;
+        const list = focusables(doc);
         const i = list.indexOf(el);
         list[(i + (init.shiftKey ? -1 : 1) + list.length) % list.length]?.focus();
       } else if (key === "Backspace" && "value" in el && !el.isContentEditable) {
@@ -459,7 +573,7 @@
         insertChar(el, key);
       }
     }
-    el.dispatchEvent(new KeyboardEvent("keyup", init));
+    el.dispatchEvent(new KeyboardEventCtor("keyup", init));
   }
 
   function select(el, value) {
@@ -473,7 +587,8 @@
     }
     if (!matched) throw new Error(`No option matches ${JSON.stringify(value)}`);
     input(el, "insertReplacementText", null);
-    el.dispatchEvent(new Event("change", { bubbles: true }));
+    const EventCtor = eventCtor(el, "Event");
+    el.dispatchEvent(new EventCtor("change", { bubbles: true }));
   }
 
   function scroll(el, value) {
@@ -507,12 +622,12 @@
     }
     input.files = dt.files;
     if (input.files.length !== files.length) throw new Error("The page did not accept the files");
-    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const EventCtor = eventCtor(input, "Event");
+    input.dispatchEvent(new EventCtor("input", { bubbles: true, composed: true }));
+    input.dispatchEvent(new EventCtor("change", { bubbles: true }));
     const size = bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
     return `→ ${files.map((f) => f.name).join(", ")} (${size})`;
   }
-
   function act(step) {
     const { action } = step;
     const el = resolve(step);
@@ -574,18 +689,22 @@
     let root = document;
     if (frameSelector) {
       const frame = document.querySelector(frameSelector);
-      if (frame) {
-        try { root = frame.contentDocument || root; } catch {}
+      if (!frame) throw new Error(`No frame matches frameSelector ${frameSelector}`);
+      try {
+        root = frame.contentDocument || root;
+        if (!frame.contentDocument) throw new Error(`Cannot access frame document for ${frameSelector} (cross-origin or sandboxed)`);
+      } catch {
+        throw new Error(`Cannot access frame document for ${frameSelector} (cross-origin or sandboxed)`);
       }
     }
     if (selector) {
-      let el = root.querySelector(selector);
+      let el = querySelectorDeep(root, selector);
       if (!el && !frameSelector) {
         for (const frame of document.querySelectorAll("iframe, frame")) {
           try {
             const doc = frame.contentDocument;
             if (doc) {
-              el = doc.querySelector(selector);
+              el = querySelectorDeep(doc, selector);
               if (el) break;
             }
           } catch {}
@@ -594,15 +713,18 @@
       found = !!el && visible(el);
     }
     if (found && text) {
-      const bodyText = root.body?.innerText || "";
+      const bodyText = textContentDeep(root.body || root.documentElement);
       found = bodyText.includes(text);
       if (!found && !frameSelector) {
         for (const frame of document.querySelectorAll("iframe, frame")) {
           try {
             const doc = frame.contentDocument;
-            if (doc?.body?.innerText?.includes(text)) {
-              found = true;
-              break;
+            if (doc) {
+              const frameText = textContentDeep(doc.body || doc.documentElement);
+              if (frameText.includes(text)) {
+                found = true;
+                break;
+              }
             }
           } catch {}
         }
@@ -615,8 +737,25 @@
     const el = resolve(target);
     el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
     const r = el.getBoundingClientRect();
-    return { x: r.left + window.scrollX, y: r.top + window.scrollY, width: Math.max(1, r.width), height: Math.max(1, r.height) };
+    let x = r.left;
+    let y = r.top;
+    let win = el.ownerDocument.defaultView;
+    while (win && win !== window && win.frameElement) {
+      const frameEl = win.frameElement;
+      const fr = frameEl.getBoundingClientRect();
+      const cs = (win.parent || window).getComputedStyle(frameEl);
+      x += fr.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0);
+      y += fr.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
+      win = win.parent;
+    }
+    return {
+      x: x + window.scrollX,
+      y: y + window.scrollY,
+      width: Math.max(1, r.width),
+      height: Math.max(1, r.height),
+    };
   }
+
 
   function pageRect() {
     const d = document.documentElement;
@@ -673,6 +812,6 @@
     })();
   });
 
-  window.__omp = { snapshot, resolve, act, check, rectOf, pageRect, toJSONSafe, describe };
+  window.__omp = { snapshot, resolve, act, check, rectOf, pageRect, toJSONSafe, describe, querySelectorDeep, textContentDeep, eventCtor };
 })();
 true;

@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "crates/omp-firefox-host",
+]
+resolver = "2"
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+strip = true
+codegen-units = 1

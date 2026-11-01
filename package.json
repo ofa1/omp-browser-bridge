@@ -37,14 +37,15 @@
   "scripts": {
     "install-host": "node scripts/install-host.mjs",
     "lint:addon": "web-ext lint --source-dir firefox",
-    "lint:syntax": "node --check host/host.mjs scripts/install-host.mjs scripts/bump-version.mjs scripts/run-tests.mjs firefox/background.js firefox/content.js firefox/popup/popup.js tests/content-frame.test.mjs",
+    "lint:syntax": "node --check host/host.mjs scripts/install-host.mjs scripts/bump-version.mjs scripts/run-tests.mjs firefox/background.js firefox/content.js firefox/popup/popup.js tests/content-frame.test.mjs tests/relay-parity.test.mjs",
     "lint": "npm run lint:addon && npm run lint:syntax",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
     "check": "npm run lint && npm run typecheck && npm test",
     "dev": "web-ext run --source-dir firefox --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url about:blank",
     "build:addon": "web-ext build --source-dir firefox --artifacts-dir dist --overwrite-dest",
-    "build": "npm run build:addon",
+    "build:host": "cargo build --release",
+    "build": "npm run build:host && npm run build:addon",
     "sign": "web-ext sign --source-dir firefox --artifacts-dir dist --channel unlisted",
     "bump": "node scripts/bump-version.mjs"
   },

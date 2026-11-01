@@ -101,7 +101,14 @@
       }
       return true;
     }
-    return el.hasAttribute("onclick");
+    if (el.hasAttribute("onclick")) {
+      // Suppress anonymous zero-content click targets (trackers, empty layout spacers)
+      if (nameOf(el)) return true;
+      if (el.innerText?.trim()) return true;
+      if (el.querySelector?.("img[alt], svg")) return true;
+      return false;
+    }
+    return false;
   }
 
   function nameOf(el) {
@@ -135,14 +142,21 @@
     const name = nameOf(el);
     if (name) parts.push(JSON.stringify(name));
     if (role === "link") {
-      const href = el.getAttribute("href");
-      if (href && !href.startsWith("javascript:")) parts.push(`→ ${shortUrl(el.href || href)}`);
+      const rawHref = (el.getAttribute("href") || "").trim();
+      if (rawHref && !rawHref.startsWith("javascript:") && rawHref !== "#" && rawHref !== "#!") {
+        const targetUrl = shortUrl(el.href || rawHref);
+        // Suppress redundant target URL if the link's label is identical or trivial match
+        if (targetUrl && name?.toLowerCase() !== targetUrl.toLowerCase() && name !== rawHref) {
+          parts.push(`→ ${targetUrl}`);
+        }
+      }
     }
     if (el.localName === "select") {
       const selected = [...el.selectedOptions].map((o) => clean(o.text, 40));
       parts.push(`= ${JSON.stringify(selected.join(", "))}`);
-      const opts = [...el.options].slice(0, 15).map((o) => clean(o.text, 30));
-      parts.push(`options: ${opts.join(" | ")}${el.options.length > 15 ? ` | …(${el.options.length})` : ""}`);
+      const totalOpts = el.options.length;
+      const opts = [...el.options].slice(0, 5).map((o) => clean(o.text, 20));
+      parts.push(`options: ${opts.join(" | ")}${totalOpts > 5 ? ` | …(${totalOpts} total)` : ""}`);
     } else if (VALUE_ROLES.has(role)) {
       if (el.isContentEditable) {
         const v = clean(el.innerText, 200);
@@ -330,7 +344,7 @@
 
     walk(root);
     flush();
-    const full = lines.join("\n");
+    const full = lines.join("\n").replace(/\n{3,}/g, "\n\n");
     const text = full.slice(offset, offset + maxChars);
     return {
       title: (document.title || "").replace(/[\r\n]+/g, " ").trim(),

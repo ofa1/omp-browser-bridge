@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [Unreleased]
+
+### Added
+- **Tab substring targeting (`target` parameter)**: `firefox_tabs` (`select`, `activate`, `open`) and `firefox_navigate` now accept a `target` substring parameter, matching against URL and page title (case-insensitive) to borrow existing tabs without manual ID lookups.
+- **Tab group hygiene & dissolution**:
+  - Pinned tab protection: `groupAgentTab` skips pinned tabs (`tab.pinned`), preventing Chrome/Firefox from silently unpinning user tabs.
+  - Automatic group dissolution: dissolves and ungroups "omp" tab groups when the native host disconnects or all omp client sessions exit (`restoreGroups()`).
+  - Duplicate group reconciliation: heals and merges duplicate same-title "omp" groups in the same window.
+  - Retried tab removal (`removeTab`): retries tab closes up to 3 times with 500ms backoff when browser tab dragging or unload is in progress.
+  - In-flight orphan tab cleanup: closes created tabs if the host drops connection during tab creation.
+  - Grouping toggle: added "Group agent tabs" toggle switch to toolbar popup and `setGroupTabs` message with `storage.local` persistence.
+- **Browser session tracking**: generates a run-level `browserSession` UUID on extension startup and reports it in `hello` and `ping`, preventing stale tab reference collisions across browser restarts.
+- **Tab status indicators**: tab listings and snapshot headers now display `pinned` and `discarded` indicators.
+- **Standalone Rust Native Messaging Host (`omp-firefox-host`)**:
+  - Implemented single-binary native messaging host in Rust (`crates/omp-firefox-host`) eliminating the Node.js runtime prerequisite on user machines.
+  - Self-registering CLI commands: `omp-firefox-host install`, `uninstall`, `doctor`, and `version`.
+  - Memory footprint drops from ~28 MB (Node.js runtime) to ~1.5 MB resident memory; instantaneous binary startup (<8 ms).
+  - High-performance unparsed envelope routing using `RawValue`, avoiding surrogate UTF-8 validation errors on arbitrary DOM text and eliminating serialization overhead.
+  - Cross-platform IPC: Unix domain sockets with UID validation and Windows named pipes with `first_pipe_instance(true)`.
+  - Automatic fallback support in `scripts/install-host.mjs`, detecting and preferring the compiled binary over Node.js.
+
+### Performance & Token Efficiency
+- **Input speed & latency optimizations**:
+  - Eliminated artificial 200ms sleeps on non-navigating actions (`fill`, `type`, `focus`, `select`, `check`, `scroll`); form filling batches now run without unnecessary idle delays.
+  - Optimistic IPC messaging in `sendTab`: attempts direct `tabs.sendMessage` first, avoiding redundant `executeScript` file reading and evaluation when `content.js` is already running.
+  - Fast SPA navigation settling: reduced same-document `settleIfIdle` from 1500ms to 350ms, saving over 1 second on client-side route transitions and pushState navigations.
+  - Adaptive polling in `waitFor`: starts polling at 40ms with backoff up to 200ms, detecting dynamic UI changes up to 5x faster than fixed 250ms polling.
+- **Token efficiency & snapshot compression**:
+  - Select element compression: limited option preview lists to the first 5 options (max 20 chars each) plus total option count, slashing `<select>` token weight by ~65%.
+  - Clean link descriptions: suppressed uninformative `→ #` / `→ javascript:*` destinations, and omitted redundant target paths when the link text already matches the destination.
+  - Anonymous click target pruning: omitted empty `clickable` elements lacking accessible names, text, and visual children (e.g. trackers, layout spacers).
+  - Deduplicated snapshot spacing: collapsed consecutive empty lines in snapshot output (`\n{3,}` to `\n\n`).
+  - Omitted redundant `now: ...` title/URL echoing in `firefox_act` when a snapshot is appended.
 ## [0.2.3] - 2026-10-28
 
 ### Added

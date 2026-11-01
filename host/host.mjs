@@ -88,6 +88,7 @@ const pending = new Map();
 const clients = new Set();
 let seq = 0;
 
+let extensionBrowserSession = null;
 // V5: Accumulate stdin chunks without quadratic concat
 const stdinChunks = [];
 let stdinTotalLen = 0;
@@ -133,6 +134,10 @@ process.stdin.on("data", (chunk) => {
       continue;
     }
     if (msg.type === "hello") {
+      if (msg.browserSession) {
+        extensionBrowserSession = String(msg.browserSession);
+        writeMetadata();
+      }
       sendToExtension({ type: "clients", count: clients.size });
       continue;
     }
@@ -220,6 +225,7 @@ function writeMetadata() {
     platform: process.platform,
     created: Date.now(),
     version: 1,
+    browserSession: extensionBrowserSession || undefined,
   };
   try {
     fs.writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, { mode: 0o600 });

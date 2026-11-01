@@ -9,6 +9,7 @@ const versionBadge = document.getElementById("version");
 const pauseToggle = document.getElementById("pause-toggle");
 const pauseSubtext = document.getElementById("pause-toggle-subtext");
 const evalToggle = document.getElementById("eval-toggle");
+const groupToggle = document.getElementById("group-toggle");
 
 const tabsCount = document.getElementById("tabs-count");
 const tabList = document.getElementById("tab-list");
@@ -81,6 +82,12 @@ function renderStatus(state) {
     const isEvalAllowed = !!state.allowEval;
     evalToggle.checked = isEvalAllowed;
     evalToggle.setAttribute("aria-checked", String(isEvalAllowed));
+  }
+
+  if (groupToggle) {
+    const isGroupTabs = state.groupTabs !== false;
+    groupToggle.checked = isGroupTabs;
+    groupToggle.setAttribute("aria-checked", String(isGroupTabs));
   }
 }
 
@@ -244,6 +251,18 @@ if (evalToggle) {
       await refreshState();
     } catch (e) {
       console.error("Failed to toggle allowEval:", e);
+    }
+  });
+}
+
+if (groupToggle) {
+  groupToggle.addEventListener("change", async () => {
+    const groupTabs = groupToggle.checked;
+    try {
+      await browser.runtime.sendMessage({ type: "setGroupTabs", groupTabs });
+      await refreshState();
+    } catch (e) {
+      console.error("Failed to toggle groupTabs:", e);
     }
   });
 }

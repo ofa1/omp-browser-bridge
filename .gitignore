@@ -9,3 +9,4 @@ host/omp-firefox-host.bat
 .amo-upload-uuid
 tmp/
 .DS_Store
+target/

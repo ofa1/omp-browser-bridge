@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-01
 ### Fixed
 - **Snapshot after iframe reload**: pruning stale element refs no longer throws `can't access dead object` when an iframe's document was destroyed; dead refs are dropped, and `resolve` reports them as stale.
 - **Select2 / custom dropdown options**: snapshots now list `role=option` entries nested inside a `role=listbox`, so open custom dropdown options get refs.

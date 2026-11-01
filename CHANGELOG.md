@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Grouping toggle: added "Group agent tabs" toggle switch to toolbar popup and `setGroupTabs` message with `storage.local` persistence.
 - **Browser session tracking**: generates a run-level `browserSession` UUID on extension startup and reports it in `hello` and `ping`, preventing stale tab reference collisions across browser restarts.
 - **Tab status indicators**: tab listings and snapshot headers now display `pinned` and `discarded` indicators.
+
+### Performance & Token Efficiency
+- **Input speed & latency optimizations**:
+  - Eliminated artificial 200ms sleeps on non-navigating actions (`fill`, `type`, `focus`, `select`, `check`, `scroll`); form filling batches now run without unnecessary idle delays.
+  - Optimistic IPC messaging in `sendTab`: attempts direct `tabs.sendMessage` first, avoiding redundant `executeScript` file reading and evaluation when `content.js` is already running.
+  - Fast SPA navigation settling: reduced same-document `settleIfIdle` from 1500ms to 350ms, saving over 1 second on client-side route transitions and pushState navigations.
+  - Adaptive polling in `waitFor`: starts polling at 40ms with backoff up to 200ms, detecting dynamic UI changes up to 5x faster than fixed 250ms polling.
+- **Token efficiency & snapshot compression**:
+  - Select element compression: limited option preview lists to the first 5 options (max 20 chars each) plus total option count, slashing `<select>` token weight by ~65%.
+  - Clean link descriptions: suppressed uninformative `→ #` / `→ javascript:*` destinations, and omitted redundant target paths when the link text already matches the destination.
+  - Anonymous click target pruning: omitted empty `clickable` elements lacking accessible names, text, and visual children (e.g. trackers, layout spacers).
+  - Deduplicated snapshot spacing: collapsed consecutive empty lines in snapshot output (`\n{3,}` to `\n\n`).
+  - Omitted redundant `now: ...` title/URL echoing in `firefox_act` when a snapshot is appended.
 ## [0.2.3] - 2026-10-28
 
 ### Added

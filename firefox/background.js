@@ -392,14 +392,36 @@ function isNavigationError(e) {
   return /Message manager disconnected|context unloaded|navigat|No matching message handler|Actor .* destroyed|Could not establish connection|Receiving end does not exist/i.test(String(e?.message || e));
 }
 
-// Sends an operation to the tab's content script via tabs.sendMessage after injecting content.js.
+// Navigation-inducing actions that may trigger page transitions.
+const NAV_ACTIONS = new Set(["click", "dblclick", "submit"]);
+
+function isNavigatingAction(step) {
+  if (NAV_ACTIONS.has(step?.action)) return true;
+  if (step?.action === "press") {
+    const val = String(step.value || "").toLowerCase();
+    return val === "enter" || val.endsWith("+enter") || val === "space" || val === " ";
+  }
+  return false;
+}
+
+// Sends an operation to the tab's content script via tabs.sendMessage.
+// Optimistically attempts tabs.sendMessage first (sub-millisecond when content.js is already running),
+// only falling back to tabs.executeScript if the receiving end is not yet connected.
 async function sendTab(tabId, op, args, timeoutMs = 15000) {
   const run = async () => {
     try {
-      await browser.tabs.executeScript(tabId, { file: "/content.js", frameId: 0 });
       return await browser.tabs.sendMessage(tabId, { op, args }, { frameId: 0 });
-    } catch (e) {
-      throw scriptError(e);
+    } catch (initialErr) {
+      const initialMsg = String(initialErr?.message || initialErr);
+      if (/Receiving end does not exist|Could not establish connection/i.test(initialMsg)) {
+        try {
+          await browser.tabs.executeScript(tabId, { file: "/content.js", frameId: 0 });
+          return await browser.tabs.sendMessage(tabId, { op, args }, { frameId: 0 });
+        } catch (scriptErr) {
+          throw scriptError(scriptErr);
+        }
+      }
+      throw scriptError(initialErr);
     }
   };
   const res = await withTimeout(run(), timeoutMs, "Page script");
@@ -427,6 +449,7 @@ async function runActSteps(tabId, steps, timeoutMs) {
         done.push(`wait ✓`);
         continue;
       }
+      const isNav = isNavigatingAction(step);
       const load = trackLoad(tabId, timeoutMs);
       let desc;
       try {
@@ -440,10 +463,17 @@ async function runActSteps(tabId, steps, timeoutMs) {
         }
         desc = "(page unloaded during action)";
       }
-      await sleep(200);
       let note = "";
-      if (load.sawLoading) note = (await load.promise) ? " → page loaded" : " → page still loading";
-      else load.cancel();
+      if (isNav) {
+        // Navigation-capable actions get a brief window to observe navigation triggers.
+        if (!load.sawLoading) await sleep(60);
+        if (load.sawLoading) note = (await load.promise) ? " → page loaded" : " → page still loading";
+        else load.cancel();
+      } else {
+        // Pure input actions (fill, type, focus, select, check, scroll) proceed immediately without delay.
+        if (load.sawLoading) note = (await load.promise) ? " → page loaded" : " → page still loading";
+        else load.cancel();
+      }
       done.push(`${step.action} ${desc}${note}`.trim());
     } catch (e) {
       return { steps: done, error: `step ${i + 1} (${step.action}) failed: ${e.message}`, tab: await tabInfo(tabId) };
@@ -619,7 +649,7 @@ async function navigate({ tabId, url, action, timeoutMs = 20000 }) {
     load.cancel();
     throw e;
   }
-  const loaded = await load.settleIfIdle(1500);
+  const loaded = await load.settleIfIdle(350);
   broadcastState();
   return { ...(await tabInfo(tabId)), loaded };
 }
@@ -627,6 +657,7 @@ async function navigate({ tabId, url, action, timeoutMs = 20000 }) {
 async function waitFor(tabId, { selector, text, url, gone, frameSelector, timeoutMs = 10000 }) {
   if (!selector && !text && !url) throw new Error("wait needs selector, text, or url");
   const deadline = Date.now() + timeoutMs;
+  let pollDelay = 40;
   while (true) {
     if (paused) throw new Error(PAUSE_ERROR);
     let ok = false;
@@ -644,7 +675,8 @@ async function waitFor(tabId, { selector, text, url, gone, frameSelector, timeou
     }
     if (ok) return;
     if (Date.now() > deadline) throw new Error(`wait timed out after ${timeoutMs}ms`);
-    await sleep(250);
+    await sleep(pollDelay);
+    pollDelay = Math.min(pollDelay * 1.5, 200);
   }
 }
 

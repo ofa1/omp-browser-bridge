@@ -539,15 +539,16 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       currentTab = id;
       const lines = res.steps.map((s, i) => `${i + 1}. ${s}`);
       if (res.error) lines.push(`✗ ${res.error}`);
-      const cleanTitle = sanitizeText(res.tab.title || "");
-      const cleanUrl = sanitizeText(res.tab.url || "");
-      lines.push(`now: ${JSON.stringify(cleanTitle)} ${cleanUrl}`);
       let body = lines.join("\n");
       if (params.snapshot) {
         const snap = await rpc<Snapshot>("snapshot", { tabId: id, maxChars: params.maxChars ?? 10_000 }, signal);
         body += `\n\n${formatSnapshot(snap, id)}`;
+      } else {
+        const cleanTitle = sanitizeText(res.tab.title || "");
+        const cleanUrl = sanitizeText(res.tab.url || "");
+        body += `\nnow: ${JSON.stringify(cleanTitle)} ${cleanUrl}`;
+        if (res.error) body += "\n(take a new snapshot if refs went stale)";
       }
-      if (res.error && !params.snapshot) body += "\n(take a new snapshot if refs went stale)";
       return text(body, { tabId: id, error: res.error ?? null });
     },
   });

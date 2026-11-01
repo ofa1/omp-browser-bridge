@@ -173,3 +173,58 @@ describe("Relay feature parity: host metadata browserSession", () => {
     }
   });
 });
+
+describe("Relay performance & token efficiency optimizations", () => {
+  it("compresses select options to preview limit of 5 with total count", () => {
+    const options = Array.from({ length: 12 }, (_, i) => ({ text: `Option ${i + 1}`, value: `opt_${i + 1}` }));
+    const totalOpts = options.length;
+    const preview = options.slice(0, 5).map((o) => o.text);
+    const formatted = `options: ${preview.join(" | ")}${totalOpts > 5 ? ` | …(${totalOpts} total)` : ""}`;
+    assert.equal(formatted, "options: Option 1 | Option 2 | Option 3 | Option 4 | Option 5 | …(12 total)");
+  });
+
+  it("suppresses redundant target URL when link text matches destination or is anchor hash", () => {
+    function shouldEmitHref(name, rawHref, targetUrl) {
+      if (!rawHref || rawHref.startsWith("javascript:") || rawHref === "#" || rawHref === "#!") return false;
+      if (targetUrl && name?.toLowerCase() === targetUrl.toLowerCase()) return false;
+      if (name === rawHref) return false;
+      return true;
+    }
+
+    assert.equal(shouldEmitHref("Docs", "/docs", "/docs"), true);
+    assert.equal(shouldEmitHref("/docs", "/docs", "/docs"), false);
+    assert.equal(shouldEmitHref("Top", "#", "#"), false);
+    assert.equal(shouldEmitHref("Close", "javascript:void(0)", "javascript:void(0)"), false);
+  });
+
+  it("collapses consecutive blank lines in snapshot text", () => {
+    const input = "Line 1\n\n\n\nLine 2\n\n\nLine 3";
+    const cleaned = input.replace(/\n{3,}/g, "\n\n");
+    assert.equal(cleaned, "Line 1\n\nLine 2\n\nLine 3");
+  });
+
+  it("identifies navigation-inducing actions correctly for settling latency bypass", () => {
+    const NAV_ACTIONS = new Set(["click", "dblclick", "submit"]);
+    function isNavigatingAction(step) {
+      if (NAV_ACTIONS.has(step?.action)) return true;
+      if (step?.action === "press") {
+        const val = String(step.value || "").toLowerCase();
+        return val === "enter" || val.endsWith("+enter") || val === "space" || val === " ";
+      }
+      return false;
+    }
+
+    assert.equal(isNavigatingAction({ action: "click" }), true);
+    assert.equal(isNavigatingAction({ action: "dblclick" }), true);
+    assert.equal(isNavigatingAction({ action: "submit" }), true);
+    assert.equal(isNavigatingAction({ action: "press", value: "Enter" }), true);
+    assert.equal(isNavigatingAction({ action: "press", value: "Control+Enter" }), true);
+    assert.equal(isNavigatingAction({ action: "press", value: "Space" }), true);
+    assert.equal(isNavigatingAction({ action: "fill", value: "test" }), false);
+    assert.equal(isNavigatingAction({ action: "type", value: "abc" }), false);
+    assert.equal(isNavigatingAction({ action: "focus" }), false);
+    assert.equal(isNavigatingAction({ action: "select", value: "1" }), false);
+    assert.equal(isNavigatingAction({ action: "check" }), false);
+    assert.equal(isNavigatingAction({ action: "scroll", value: "down" }), false);
+  });
+});

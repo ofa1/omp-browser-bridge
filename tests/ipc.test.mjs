@@ -61,6 +61,11 @@ describe("file upload chunk invariant", () => {
 describe("host process IPC round-trip", () => {
   it("spawns host.mjs, receives clients frame for hello, routes socket round-trip, and shuts down on stdin end", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-ipc-test-"));
+    if (process.platform !== "win32") {
+      try {
+        fs.chmodSync(tmpDir, 0o700);
+      } catch {}
+    }
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
     const hostScript = path.resolve(currentDir, "..", "host", "host.mjs");
     const le = os.endianness() === "LE";
@@ -84,6 +89,18 @@ describe("host process IPC round-trip", () => {
           this.chunks.push(chunk);
           this.totalLen += chunk.length;
           this.flush();
+        });
+        this.stream.on("end", () => {
+          while (this.waiters.length > 0) {
+            const w = this.waiters.shift();
+            w.reject(new Error("Native message stream closed prematurely"));
+          }
+        });
+        this.stream.on("error", (err) => {
+          while (this.waiters.length > 0) {
+            const w = this.waiters.shift();
+            w.reject(err);
+          }
         });
       }
 
@@ -114,19 +131,30 @@ describe("host process IPC round-trip", () => {
           }
           this.totalLen -= (4 + len);
 
-          const parsed = JSON.parse(raw.toString("utf8"));
           const waiter = this.waiters.shift();
-          if (waiter) waiter(parsed);
-          else this.chunks.push({ parsed }); // fallback queue if needed
+          if (waiter) {
+            try {
+              const msg = JSON.parse(raw.toString("utf8"));
+              waiter.resolve(msg);
+            } catch (err) {
+              waiter.reject(err);
+            }
+          }
         }
       }
 
       nextMessage(timeoutMs = 5000) {
         return new Promise((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error("Timeout waiting for native message")), timeoutMs);
-          this.waiters.push((msg) => {
-            clearTimeout(timer);
-            resolve(msg);
+          this.waiters.push({
+            resolve: (msg) => {
+              clearTimeout(timer);
+              resolve(msg);
+            },
+            reject: (err) => {
+              clearTimeout(timer);
+              reject(err);
+            },
           });
           this.flush();
         });
@@ -250,6 +278,11 @@ describe("host process IPC round-trip", () => {
     }
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "omp-rust-ipc-test-"));
+    if (process.platform !== "win32") {
+      try {
+        fs.chmodSync(tmpDir, 0o700);
+      } catch {}
+    }
     const le = os.endianness() === "LE";
 
     function encodeNativeFrame(msg) {

@@ -1,0 +1,25 @@
+[package]
+name = "omp-firefox-host"
+version = "0.2.3"
+edition = "2021"
+description = "High-performance native messaging host for omp Firefox browser bridge"
+authors = ["Omair Ahmed <omair.ahmed@gmail.com>"]
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.43", default-features = false, features = ["rt", "net", "io-util", "sync", "macros", "signal", "time"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Pipes",
+    "Win32_Foundation",
+    "Win32_System_Threading",
+] }
+

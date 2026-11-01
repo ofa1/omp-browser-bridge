@@ -123,7 +123,37 @@ function checkOmpBinary(binPath) {
   } catch {}
   return null;
 }
+function checkNativeBinary(binPath) {
+  try {
+    if (!fs.existsSync(binPath)) return null;
+    const stat = fs.statSync(binPath);
+    if (!stat.isFile()) return null;
+    const output = execFileSync(binPath, ["version"], { encoding: "utf8", timeout: 3000 }).trim();
+    if (output.includes("omp-firefox-host")) {
+      return { type: "native", path: path.resolve(binPath), version: output };
+    }
+  } catch {}
+  return null;
+}
 
+export function findNativeBinary(platform = process.platform, root = resolveRoot(), home = os.homedir()) {
+  const binName = platform === "win32" ? "omp-firefox-host.exe" : "omp-firefox-host";
+  const candidates = [
+    path.join(root, "target", "release", binName),
+    path.join(root, "target", "debug", binName),
+    path.join(home, ".omp", "bin", binName),
+  ];
+  for (const cand of candidates) {
+    const checked = checkNativeBinary(cand);
+    if (checked) return checked;
+  }
+  const fromPath = findOnPath(binName, platform);
+  if (fromPath) {
+    const checked = checkNativeBinary(fromPath);
+    if (checked) return checked;
+  }
+  return null;
+}
 export function findOnPath(binaryName, platform = process.platform, pathEnv = process.env.PATH || "") {
   const delimiter = platform === "win32" ? ";" : ":";
   const isAbsolute = platform === "win32"
@@ -151,6 +181,11 @@ export function resolveRuntime(options = {}, platform = process.platform, home =
   const forced = options.runtime || process.env.OMP_BRIDGE_RUNTIME;
 
   if (forced) {
+    if (forced.toLowerCase() === "native") {
+      const found = findNativeBinary(platform, resolveRoot(), home);
+      if (!found) throw new Error("OMP_BRIDGE_RUNTIME=native requested, but no omp-firefox-host binary was found.");
+      return found;
+    }
     if (forced.toLowerCase() === "node") {
       const found = findNodeRuntime(platform, home);
       if (!found) throw new Error("OMP_BRIDGE_RUNTIME=node requested, but no Node.js >= 18 was found.");
@@ -163,20 +198,27 @@ export function resolveRuntime(options = {}, platform = process.platform, home =
     }
     // Explicit custom path
     const resolvedPath = path.resolve(forced);
+    const asNative = checkNativeBinary(resolvedPath);
+    if (asNative) return asNative;
     const asNode = checkNodeBinary(resolvedPath);
     if (asNode) return asNode;
     const asOmp = checkOmpBinary(resolvedPath);
     if (asOmp) return asOmp;
-    throw new Error(`Custom runtime at "${forced}" is neither a valid Node.js (>= 18) binary nor a valid omp binary.`);
+    throw new Error(`Custom runtime at "${forced}" is neither a valid native host, Node.js (>= 18), nor omp binary.`);
   }
 
-  // 1. Prefer Node.js >= 18
+  // 1. Prefer compiled standalone Rust host binary if available (zero Node.js dependency)
+  const nativeRuntime = findNativeBinary(platform, resolveRoot(), home);
+  if (nativeRuntime) return nativeRuntime;
+
+  // 2. Fall back to Node.js >= 18
   const nodeRuntime = findNodeRuntime(platform, home);
   if (nodeRuntime) return nodeRuntime;
 
-  // 2. Fall back to omp binary (BUN_BE_BUN=1)
+  // 3. Fall back to omp binary (BUN_BE_BUN=1)
   const ompRuntime = findOmpRuntime(platform, home);
   if (ompRuntime) return ompRuntime;
+
 
   throw new Error(
     "Could not locate Node.js (>= 18) or the 'omp' binary. " +
@@ -354,11 +396,23 @@ export async function installHost(options = {}) {
   };
   fs.writeFileSync(metaVersionPath, `${JSON.stringify(metaVersion, null, 2)}\n`, { mode: 0o600 });
 
-  // Write wrapper
-  const wrapperName = platform === "win32" ? "omp-firefox-host.bat" : "omp-firefox-host";
-  const wrapperPath = path.join(stableHostDir, wrapperName);
-  const wrapperContent = buildWrapperContent(runtime, destHostMjs, platform);
-  fs.writeFileSync(wrapperPath, wrapperContent, { mode: platform === "win32" ? 0o666 : 0o755 });
+  // Determine target binary or wrapper script
+  let wrapperPath;
+  if (runtime.type === "native") {
+    const binName = platform === "win32" ? "omp-firefox-host.exe" : "omp-firefox-host";
+    wrapperPath = path.join(stableHostDir, binName);
+    fs.copyFileSync(runtime.path, wrapperPath);
+    if (platform !== "win32") {
+      try {
+        fs.chmodSync(wrapperPath, 0o755);
+      } catch {}
+    }
+  } else {
+    const wrapperName = platform === "win32" ? "omp-firefox-host.bat" : "omp-firefox-host";
+    wrapperPath = path.join(stableHostDir, wrapperName);
+    const wrapperContent = buildWrapperContent(runtime, destHostMjs, platform);
+    fs.writeFileSync(wrapperPath, wrapperContent, { mode: platform === "win32" ? 0o666 : 0o755 });
+  }
 
   // Write manifest(s)
   const manifestPaths = getCandidateManifestPaths(platform, home, stableHostDir);

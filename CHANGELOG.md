@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [Unreleased]
+
+### Added
+- **Tab substring targeting (`target` parameter)**: `firefox_tabs` (`select`, `activate`, `open`) and `firefox_navigate` now accept a `target` substring parameter, matching against URL and page title (case-insensitive) to borrow existing tabs without manual ID lookups.
+- **Tab group hygiene & dissolution**:
+  - Pinned tab protection: `groupAgentTab` skips pinned tabs (`tab.pinned`), preventing Chrome/Firefox from silently unpinning user tabs.
+  - Automatic group dissolution: dissolves and ungroups "omp" tab groups when the native host disconnects or all omp client sessions exit (`restoreGroups()`).
+  - Duplicate group reconciliation: heals and merges duplicate same-title "omp" groups in the same window.
+  - Retried tab removal (`removeTab`): retries tab closes up to 3 times with 500ms backoff when browser tab dragging or unload is in progress.
+  - In-flight orphan tab cleanup: closes created tabs if the host drops connection during tab creation.
+  - Grouping toggle: added "Group agent tabs" toggle switch to toolbar popup and `setGroupTabs` message with `storage.local` persistence.
+- **Browser session tracking**: generates a run-level `browserSession` UUID on extension startup and reports it in `hello` and `ping`, preventing stale tab reference collisions across browser restarts.
+- **Tab status indicators**: tab listings and snapshot headers now display `pinned` and `discarded` indicators.
 ## [0.2.3] - 2026-10-28
 
 ### Added

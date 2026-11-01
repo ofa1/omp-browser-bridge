@@ -13,7 +13,15 @@ interface TabInfo {
   status?: string;
   agent: boolean;
   discarded?: boolean;
+  pinned?: boolean;
   loaded?: boolean;
+}
+
+interface PingResult {
+  version: string;
+  paused: boolean;
+  browserSession?: string;
+  userAgent?: string;
 }
 
 interface Snapshot {
@@ -83,6 +91,7 @@ export default function firefoxExtension(pi: ExtensionAPI) {
   let bridge: FirefoxBridge | null = null;
   let enabled = false;
   let currentTab: number | undefined;
+  let activeBrowserSession: string | undefined;
   // Tabs the add-on reports as agent-owned. Reading any other tab (the user's own) needs exec approval.
   const agentTabs = new Set<number>();
   function noteTab(t: TabInfo): TabInfo {
@@ -100,6 +109,10 @@ export default function firefoxExtension(pi: ExtensionAPI) {
       agentTabs.clear();
       currentTab = undefined;
       bridge = await FirefoxBridge.connect();
+      try {
+        const ping = await bridge.call<PingResult>("ping", {}, { timeoutMs: 3000 });
+        activeBrowserSession = ping.browserSession;
+      } catch {}
     }
     return bridge;
   }
@@ -157,8 +170,24 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     return { content: [{ type: "text" as const, text: clipped }], details };
   }
 
+  function findMatchingTab(tabs: TabInfo[], target: string): TabInfo | undefined {
+    const query = target.toLowerCase().trim();
+    if (!query) return undefined;
+    return tabs.find((t) => {
+      const url = (t.url || "").toLowerCase();
+      const title = (t.title || "").toLowerCase();
+      return url.includes(query) || title.includes(query);
+    });
+  }
+
   function tabLine(t: TabInfo): string {
-    const marks = [t.id === currentTab ? "*" : " ", t.agent ? "agent" : "", t.active ? "visible" : ""].filter(Boolean).join(" ");
+    const marks = [
+      t.id === currentTab ? "*" : " ",
+      t.agent ? "agent" : "",
+      t.active ? "visible" : "",
+      t.pinned ? "pinned" : "",
+      t.discarded ? "discarded" : "",
+    ].filter(Boolean).join(" ");
     const cleanTitle = sanitizeText(t.title || "");
     const cleanUrl = sanitizeText(t.url || "");
     return `${marks} tab ${t.id} (win ${t.windowId}) ${JSON.stringify(cleanTitle)} ${cleanUrl}`;
@@ -177,9 +206,10 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     const active = await pi.getActiveTools();
     if (on) {
       enabled = true;
-      let info: { version: string; paused: boolean; userAgent: string };
+      let info: PingResult;
       try {
-        info = await rpc("ping", {}, undefined, 5000);
+        info = await rpc<PingResult>("ping", {}, undefined, 5000);
+        activeBrowserSession = info.browserSession;
       } catch (e) {
         enabled = false;
         throw e;
@@ -305,11 +335,13 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     description:
       "List or manage tabs in the user's real Firefox (logged-in sessions). " +
       "list: all tabs (* = current, agent = opened by you). open: new background agent tab (grouped under 'omp'). " +
+      "select/activate/open: match existing tab by target URL or title substring. " +
       "select: make tabId the current tab for other firefox_* tools without focusing it. activate: bring tab to front. close: close a tab. " +
       "Only select/act on the user's own tabs when they asked you to.",
     parameters: z.object({
       action: z.enum(["list", "open", "select", "activate", "close"]).default("list"),
-      tabId: z.number().int().optional().describe("Required for select/activate/close"),
+      tabId: z.number().int().optional().describe("Target tab id (required for close; optional for select/activate if target is given)"),
+      target: z.string().optional().describe("URL or title substring to match an existing tab (for select/activate/open)"),
       url: z.string().optional().describe("For open"),
       active: z.boolean().optional().describe("open: focus the new tab (default false)"),
     }),
@@ -326,15 +358,31 @@ export default function firefoxExtension(pi: ExtensionAPI) {
         return text(tabs.map(tabLine).join("\n"), { count: tabs.length });
       }
       if (action === "select") {
-        const id = requireTab(params.tabId);
-        const t = noteTab(await rpc<TabInfo>("tabs", { action: "info", tabId: id }, signal));
-        currentTab = id;
+        let id = params.tabId;
+        if (id === undefined && params.target) {
+          const tabs = await rpc<TabInfo[]>("tabs", { action: "list" }, signal);
+          for (const t of tabs) noteTab(t);
+          const matched = findMatchingTab(tabs, params.target);
+          if (!matched) throw new Error(`No tab matches target ${JSON.stringify(params.target)}`);
+          id = matched.id;
+        }
+        const targetId = requireTab(id);
+        const t = noteTab(await rpc<TabInfo>("tabs", { action: "info", tabId: targetId }, signal));
+        currentTab = targetId;
         return text(`Current tab:\n${tabLine(t)}`);
       }
       if (action === "activate") {
-        const id = requireTab(params.tabId);
-        const t = noteTab(await rpc<TabInfo>("tabs", { action, tabId: id }, signal));
-        currentTab = id;
+        let id = params.tabId;
+        if (id === undefined && params.target) {
+          const tabs = await rpc<TabInfo[]>("tabs", { action: "list" }, signal);
+          for (const t of tabs) noteTab(t);
+          const matched = findMatchingTab(tabs, params.target);
+          if (!matched) throw new Error(`No tab matches target ${JSON.stringify(params.target)}`);
+          id = matched.id;
+        }
+        const targetId = requireTab(id);
+        const t = noteTab(await rpc<TabInfo>("tabs", { action, tabId: targetId }, signal));
+        currentTab = targetId;
         return text(tabLine(t));
       }
       if (action === "close") {
@@ -343,6 +391,15 @@ export default function firefoxExtension(pi: ExtensionAPI) {
         await rpc("tabs", { action, tabId: id }, signal);
         if (id === currentTab) currentTab = undefined;
         return text(`Closed tab ${id}`);
+      }
+      if (action === "open" && params.target) {
+        const tabs = await rpc<TabInfo[]>("tabs", { action: "list" }, signal);
+        for (const t of tabs) noteTab(t);
+        const matched = findMatchingTab(tabs, params.target);
+        if (matched) {
+          currentTab = matched.id;
+          return text(`Borrowed existing tab matching ${JSON.stringify(params.target)}:\n${tabLine(matched)}`);
+        }
       }
       const t = noteTab(await rpc<TabInfo>("tabs", { action, tabId: params.tabId, url: params.url, active: params.active }, signal));
       currentTab = t.id;
@@ -355,10 +412,11 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     label: "Firefox Navigate",
     description:
       "Navigate in the user's Firefox and (by default) return a page snapshot. With no current tab, or newTab:true, opens a background agent tab. " +
-      "Never navigate a tab the user is reading unless they asked.",
+      "Pass target to borrow an existing tab by URL/title substring. Never navigate a tab the user is reading unless they asked.",
     parameters: z.object({
       url: z.string().optional().describe("URL to load"),
       action: z.enum(["back", "forward", "reload"]).optional().describe("Instead of url"),
+      target: z.string().optional().describe("Borrow an existing tab matching this URL or title substring; opens a new tab if no match"),
       tabId,
       newTab: z.boolean().optional().describe("Open url in a new agent tab"),
       snapshot: z.boolean().optional().describe("Return a page snapshot afterwards (default true)"),
@@ -368,10 +426,27 @@ export default function firefoxExtension(pi: ExtensionAPI) {
     defaultInactive: true,
     approval: "exec",
     async execute(_id, params, signal) {
-      if (!params.url && !params.action) throw new Error("Pass url or action");
+      if (!params.url && !params.action && !params.target) throw new Error("Pass url, action, or target");
       const timeoutMs = params.timeoutMs ?? 20_000;
       let tab: TabInfo;
-      if (params.url && (params.newTab || (params.tabId ?? currentTab) === undefined)) {
+      if (params.target && params.tabId === undefined) {
+        const tabs = await rpc<TabInfo[]>("tabs", { action: "list" }, signal);
+        for (const t of tabs) noteTab(t);
+        const matched = findMatchingTab(tabs, params.target);
+        if (matched) {
+          currentTab = matched.id;
+          if (params.url || params.action) {
+            tab = noteTab(await rpc<TabInfo>("navigate", { tabId: matched.id, url: params.url, action: params.action, timeoutMs }, signal, timeoutMs + 5000));
+          } else {
+            tab = matched;
+          }
+        } else if (params.url) {
+          tab = noteTab(await rpc<TabInfo>("tabs", { action: "open", url: params.url, timeoutMs }, signal, timeoutMs + 5000));
+          currentTab = tab.id;
+        } else {
+          throw new Error(`No tab matches target ${JSON.stringify(params.target)}`);
+        }
+      } else if (params.url && (params.newTab || (params.tabId ?? currentTab) === undefined)) {
         tab = noteTab(await rpc<TabInfo>("tabs", { action: "open", url: params.url, timeoutMs }, signal, timeoutMs + 5000));
         currentTab = tab.id;
       } else {

@@ -22,7 +22,7 @@ OMP Browser Bridge links the [`omp` coding agent](https://github.com/can1357/oh-
 - **Batched interactions**: Perform clicks, typing, form fills, keystrokes, file uploads, and waiting loops in a single call via `firefox_act`.
 - **Runs inside your real browser**: Uses your existing cookies, active logins, sessions, and local development domains (`localhost`, dev servers).
 - **Zero cloud dependencies**: All IPC communication occurs strictly on your machine over restricted Unix domain sockets or random-UUID Windows named pipes. The add-on and host make zero network requests and have no telemetry; only the page content you instruct `omp` to read is passed to your configured LLM provider in `omp`.
-- **Dedicated agent tabs**: Tabs opened by `omp` run in the background and group neatly under a purple "omp" tab group, keeping your workspace organized.
+- **Dedicated agent tabs with smart grouping**: Tabs opened by `omp` run in the background and group neatly under a purple "omp" tab group. Pinned tabs are never grouped or unpinned, duplicate groups are automatically healed, and groups dissolve cleanly upon disconnect. Tab grouping can also be toggled off anytime from the popup.
 
 ```mermaid
 flowchart LR
@@ -94,8 +94,8 @@ When enabled, the following tools become active in `omp`:
 
 | Tool | Approval Tier | Description |
 | ---- | :-----------: | ----------- |
-| `firefox_tabs` | `read` (list)<br>`read` (select agent tab)<br>`exec` (open, activate, close, select user tab) | List tabs, open background agent tabs, select active tab, bring tab to front, or close tabs. |
-| `firefox_navigate` | `exec` | Navigate to a URL, go back/forward, or reload. Returns a fresh page snapshot by default. |
+| `firefox_tabs` | `read` (list)<br>`read` (select agent tab)<br>`exec` (open, activate, close, select user tab) | List tabs, open background agent tabs, select active tab, bring tab to front, or close tabs. Supports `target` (URL/title substring) to borrow or select existing tabs. |
+| `firefox_navigate` | `exec` | Navigate to a URL, go back/forward, or reload. Returns a fresh page snapshot by default. Supports `target` to borrow an existing matching tab instead of opening a new one. |
 | `firefox_snapshot` | `read` (agent tabs)<br>`exec` (user tabs) | Read page content as clean text with inline element references (`[N]`). Supports `viewport` or `page` scopes and CSS selectors. |
 | `firefox_act` | `exec` | Batch one or more user interactions: `click`, `dblclick`, `hover`, `focus`, `fill`, `type`, `press`, `select`, `check`, `uncheck`, `submit`, `scroll`, `wait`, `upload`. `upload` sets local files (paths relative to the working directory, up to 50 MB per step) on a file input, its label, or a container holding one; hidden inputs work and no page JavaScript is needed. |
 | `firefox_eval` | `exec`<br>*(Requires popup opt-in)* | Execute async JavaScript within content script scope (`document`, `window`, and `page` = `window.wrappedJSObject` available). Disabled until "Allow page JavaScript" is toggled in the popup. |
@@ -153,7 +153,7 @@ omp:
 - **Tiered Approval Protection**: Inspecting personal tabs requires `exec` approval, ensuring personal emails or bank tabs cannot be quietly scraped under `read` approval.
 - **Eval Behind Popup Opt-In**: Dynamic code evaluation via `firefox_eval` is completely disabled by default. It can only be enabled if you explicitly toggle "Allow page JavaScript" in the toolbar popup.
 - **Pause Toggle & Immediate Abort**: Pause agent access anytime from the toolbar popup switch or by pressing <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd>. When paused, incoming tool calls fail immediately, in-flight action batches are aborted before the next step, and active wait loops terminate instantly.
-- **Visual Isolation**: Tabs created by the agent are placed in a purple "omp" tab group and open in the background without stealing your focus.
+- **Visual Isolation & Tab Group Hygiene**: Tabs created by the agent are placed in a purple "omp" tab group in the background. The bridge never unpins pinned tabs, automatically dissolves "omp" tab groups when omp disconnects or finishes, retries closes during tab drags, and cleans up in-flight tabs if connections drop. Tab grouping can be disabled via the toolbar popup switch.
 - **Ref Spoofing Protection**: Page text matching `[digits]` is automatically escaped (`\[digits]`) to prevent malicious sites from misleading the agent into clicking arbitrary elements.
 - **Indirect Prompt Injection Warning**: Web pages can contain untrusted text designed to instruct or mislead LLMs. Keep `omp`'s `approval` settings active, and exercise caution when pointing the agent at untrusted websites.
 

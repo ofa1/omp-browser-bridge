@@ -7,13 +7,16 @@ let retryMs = 2000;
 let clients = 0;
 let paused = false;
 let allowEval = false;
+let groupTabs = true;
+const browserSession = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : String(Date.now());
 const PAUSE_ERROR = "The user paused agent control in Firefox (OMP Browser Bridge popup or Alt+Shift+O). Ask them to resume it.";
 let hostConnected = false;
 let lastDisconnectError = null;
 
-browser.storage.local.get({ allowEval: false, paused: false }).then((res) => {
+browser.storage.local.get({ allowEval: false, paused: false, groupTabs: true }).then((res) => {
   allowEval = !!res.allowEval;
   paused = !!res.paused;
+  groupTabs = res.groupTabs !== false;
   updateBadge();
   broadcastState();
 }).catch(() => {});
@@ -27,6 +30,10 @@ browser.storage.onChanged.addListener((changes, area) => {
     if ("paused" in changes) {
       paused = !!changes.paused.newValue;
       updateBadge();
+      broadcastState();
+    }
+    if ("groupTabs" in changes) {
+      groupTabs = changes.groupTabs.newValue !== false;
       broadcastState();
     }
   }
@@ -152,10 +159,12 @@ async function getState() {
 
   return {
     version: VERSION,
+    browserSession,
     hostConnected,
     clients,
     paused,
     allowEval,
+    groupTabs,
     agentTabs: tabList,
     activity: [...activity],
     lastDisconnectError,
@@ -188,16 +197,18 @@ browser.runtime.onMessage.addListener((msg, sender) => {
         await browser.storage.local.set({ allowEval });
         broadcastState();
         return { ok: true, allowEval };
+      case "setGroupTabs":
+        groupTabs = msg.groupTabs !== false;
+        await browser.storage.local.set({ groupTabs });
+        broadcastState();
+        return { ok: true, groupTabs };
     case "closeAgentTabs": {
       const ids = Array.from(agentTabs);
       agentTabs.clear();
       if (ids.length) {
-        try {
-          await browser.tabs.remove(ids);
-        } catch {
-          // ignore error removing already-closed tabs
-        }
+        await removeTabs(ids);
       }
+      await restoreGroups().catch(() => {});
       broadcastState();
       return { ok: true, closed: ids.length };
     }
@@ -236,10 +247,11 @@ function connect() {
       clients = 0;
       updateBadge();
       broadcastState();
+      restoreGroups().catch(() => {});
       setTimeout(connect, retryMs);
       retryMs = Math.min(retryMs * 2, 60000);
     });
-    port.postMessage({ type: "hello", version: VERSION });
+    port.postMessage({ type: "hello", version: VERSION, browserSession });
     updateBadge();
     broadcastState();
   } catch (e) {
@@ -256,11 +268,15 @@ function connect() {
 async function onHostMessage(msg) {
   if (msg.type === "clients") {
     retryMs = 2000;
+    const prevClients = clients;
     clients = msg.count;
     hostConnected = true;
     lastDisconnectError = null;
     updateBadge();
     broadcastState();
+    if (prevClients > 0 && clients === 0) {
+      restoreGroups().catch(() => {});
+    }
     return;
   }
   if (msg.type !== "request") return;
@@ -300,6 +316,59 @@ async function onHostMessage(msg) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const REMOVE_TAB_ATTEMPTS = 3;
+const REMOVE_TAB_RETRY_MS = 500;
+
+/** Firefox/Chrome can refuse a tab close for a moment (tab being dragged or unloaded); retry before failing. */
+async function removeTab(tabId) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await browser.tabs.remove(tabId);
+      return;
+    } catch (error) {
+      const msg = String(error?.message || error);
+      if (/Invalid tab id|No tab with id|Tabs cannot be edited/i.test(msg)) return;
+      if (attempt >= REMOVE_TAB_ATTEMPTS) throw error;
+      await sleep(REMOVE_TAB_RETRY_MS);
+    }
+  }
+}
+
+async function removeTabs(tabIds) {
+  const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
+  for (const id of ids) {
+    await removeTab(id).catch(() => {});
+  }
+}
+
+/** Dissolve every omp-titled tab group on disconnect or when agent tabs are released. */
+async function restoreGroups() {
+  if (typeof browser.tabs?.ungroup !== "function") {
+    groupByWindow.clear();
+    return;
+  }
+  try {
+    if (browser.tabGroups?.query) {
+      const groups = await browser.tabGroups.query({ title: "omp" }).catch(() => []);
+      for (const group of groups) {
+        const tabs = await browser.tabs.query({ groupId: group.id }).catch(() => []);
+        const ids = tabs.map((t) => t.id).filter((id) => id !== undefined);
+        if (ids.length > 0) await browser.tabs.ungroup(ids).catch(() => {});
+      }
+    } else if (groupByWindow.size > 0) {
+      for (const groupId of groupByWindow.values()) {
+        const tabs = await browser.tabs.query({ groupId }).catch(() => []);
+        const ids = tabs.map((t) => t.id).filter((id) => id !== undefined);
+        if (ids.length > 0) await browser.tabs.ungroup(ids).catch(() => {});
+      }
+    }
+  } catch (e) {
+    console.warn("omp: restoreGroups failed", e);
+  } finally {
+    groupByWindow.clear();
+  }
+}
 
 function withTimeout(promise, ms, what) {
   let timer;
@@ -467,25 +536,46 @@ function trackLoad(tabId, timeoutMs) {
 
 async function tabInfo(tabId) {
   const t = await browser.tabs.get(tabId);
-  return { id: t.id, windowId: t.windowId, active: t.active, title: t.title, url: t.url, status: t.status, agent: agentTabs.has(t.id) };
+  return { id: t.id, windowId: t.windowId, active: t.active, title: t.title, url: t.url, status: t.status, agent: agentTabs.has(t.id), discarded: t.discarded, pinned: !!t.pinned };
 }
 
 async function groupAgentTab(tabId) {
-  if (!browser.tabs.group) return;
-  const { windowId } = await browser.tabs.get(tabId);
-  const existing = groupByWindow.get(windowId);
+  if (!groupTabs || !browser.tabs.group) return;
   try {
-    if (existing !== undefined) {
-      await browser.tabs.group({ tabIds: [tabId], groupId: existing });
-      return;
+    const tab = await browser.tabs.get(tabId);
+    // Grouping silently unpins; never touch pinned tabs (matching upstream browser-relay)
+    if (tab.pinned) return;
+    const windowId = tab.windowId;
+
+    let groupId = groupByWindow.get(windowId);
+    if (groupId !== undefined) {
+      try {
+        await browser.tabs.group({ tabIds: [tabId], groupId });
+        return;
+      } catch {
+        groupByWindow.delete(windowId);
+      }
     }
-  } catch {
-    groupByWindow.delete(windowId);
-  }
-  try {
-    const groupId = await browser.tabs.group({ tabIds: [tabId], createProperties: { windowId } });
+
+    if (browser.tabGroups?.query) {
+      const existing = await browser.tabGroups.query({ windowId, title: "omp" }).catch(() => []);
+      if (existing && existing.length > 0) {
+        groupId = existing[0].id;
+        groupByWindow.set(windowId, groupId);
+        // Heal duplicate same-title groups left behind by races
+        for (const dupe of existing.slice(1)) {
+          const dupeTabs = await browser.tabs.query({ groupId: dupe.id }).catch(() => []);
+          const dupeIds = dupeTabs.map((t) => t.id).filter((id) => id !== undefined);
+          if (dupeIds.length > 0) await browser.tabs.group({ tabIds: dupeIds, groupId }).catch(() => {});
+        }
+        await browser.tabs.group({ tabIds: [tabId], groupId });
+        return;
+      }
+    }
+
+    groupId = await browser.tabs.group({ tabIds: [tabId], createProperties: { windowId } });
     groupByWindow.set(windowId, groupId);
-    await browser.tabGroups?.update(groupId, { title: "omp", color: "purple", collapsed: false });
+    await browser.tabGroups?.update(groupId, { title: "omp", color: "purple", collapsed: false }).catch(() => {});
   } catch (e) {
     console.warn("omp: tab grouping failed", e);
   }
@@ -560,7 +650,7 @@ async function waitFor(tabId, { selector, text, url, gone, frameSelector, timeou
 
 const methods = {
   async ping() {
-    return { version: VERSION, paused, userAgent: navigator.userAgent };
+    return { version: VERSION, paused, browserSession, userAgent: navigator.userAgent };
   },
 
   async stageFile({ id, name, type, data }) {
@@ -587,11 +677,16 @@ const methods = {
       case "list": {
         const tabs = await browser.tabs.query({});
         return tabs.map((t) => ({
-          id: t.id, windowId: t.windowId, active: t.active, title: t.title, url: t.url, agent: agentTabs.has(t.id), discarded: t.discarded,
+          id: t.id, windowId: t.windowId, active: t.active, title: t.title, url: t.url, agent: agentTabs.has(t.id), discarded: t.discarded, pinned: !!t.pinned,
         }));
       }
       case "open": {
         const tab = await browser.tabs.create({ url: "about:blank", active: !!active });
+        if (tab.id === undefined) throw new Error("Created tab has no id");
+        if (!hostConnected || !port) {
+          removeTab(tab.id).catch(() => {});
+          throw new Error("Host disconnected while opening tab");
+        }
         agentTabs.add(tab.id);
         await groupAgentTab(tab.id);
         broadcastState();
@@ -601,7 +696,7 @@ const methods = {
       case "close":
         agentTabs.delete(tabId);
         broadcastState();
-        await browser.tabs.remove(tabId);
+        await removeTab(tabId);
         return { closed: tabId };
       case "activate": {
         const t = await browser.tabs.update(tabId, { active: true });

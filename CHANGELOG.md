@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-01
+
 ### Added
 - **Tab substring targeting (`target` parameter)**: `firefox_tabs` (`select`, `activate`, `open`) and `firefox_navigate` now accept a `target` substring parameter, matching against URL and page title (case-insensitive) to borrow existing tabs without manual ID lookups.
 - **Tab group hygiene & dissolution**:

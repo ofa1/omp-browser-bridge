@@ -29,6 +29,19 @@
     return id;
   }
 
+  // Elements from a destroyed iframe document become dead wrappers whose properties throw; drop them instead of failing.
+  function alive(el) {
+    try {
+      return el.isConnected;
+    } catch {
+      return false;
+    }
+  }
+
+  function pruneRefs() {
+    for (const [id, el] of byId) if (!alive(el)) byId.delete(id);
+  }
+
   function escapeRefMarkers(s) {
     return (s || "").replace(/\[(\d+)\]/g, "\\[$1]");
   }
@@ -254,7 +267,7 @@
       root = querySelectorDeep(root, selector);
       if (!root) throw new Error(`No element matches selector ${selector}`);
     }
-    for (const [id, el] of byId) if (!el.isConnected) byId.delete(id);
+    pruneRefs();
 
     const onlyRefs = mode === "interactive";
     const vw = window.innerWidth;
@@ -320,6 +333,13 @@
         refs++;
         if (onlyRefs) lines.push(describe(el));
         else cur += ` ${describe(el)} `;
+        // Custom dropdowns (Select2 etc.) put their options inside role=listbox; expose them as refs too.
+        // role=menu is not interactive, so the normal walk already reaches its menuitems.
+        if (roleOf(el) === "listbox" && el.localName !== "select" && el.querySelector("[role=option]")) {
+          flush();
+          walkChildren(el);
+          flush();
+        }
         return;
       }
       if (tag === "img") {
@@ -361,7 +381,10 @@
   function resolve({ ref, selector, frameSelector } = {}) {
     if (ref !== undefined && ref !== null) {
       const el = byId.get(Number(ref));
-      if (!el || !el.isConnected) throw new Error(`Ref [${ref}] is stale or unknown; take a new snapshot`);
+      if (!el || !alive(el)) {
+        byId.delete(Number(ref));
+        throw new Error(`Ref [${ref}] is stale or unknown; take a new snapshot`);
+      }
       return el;
     }
     if (selector) {
@@ -472,12 +495,21 @@
     el.dispatchEvent(new EventCtor("change", { bubbles: true }));
   }
 
+  const KEY_CODES = {
+    Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18, Escape: 27, " ": 32, PageUp: 33, PageDown: 34, End: 35, Home: 36,
+    ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Delete: 46,
+  };
+
   function keyInit(key, mods) {
     let code = key;
     if (key.length === 1) code = /[a-z]/i.test(key) ? `Key${key.toUpperCase()}` : /\d/.test(key) ? `Digit${key}` : "";
+    // Legacy keyCode/which: many libraries (Select2, jQuery UI, Bootstrap) only read these.
+    const keyCode = KEY_CODES[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
     return {
       key,
       code,
+      keyCode,
+      which: keyCode,
       bubbles: true,
       cancelable: true,
       composed: true,

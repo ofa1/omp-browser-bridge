@@ -485,26 +485,30 @@ async function runActSteps(tabId, steps, timeoutMs) {
 // Only eval (when allowed) may use executeScript({ code }).
 async function executeEval(tabId, code, args = [], frameSelector, timeoutMs = 15000) {
   const fsJson = JSON.stringify(frameSelector || null);
-  const body = `(async () => {
-    let win = window;
-    let doc = document;
-    const fs = ${fsJson};
-    if (fs) {
-      const frame = document.querySelector(fs);
-      if (!frame) throw new Error("No frame matches frameSelector " + fs);
-      if (frame.contentWindow) {
-        win = frame.contentWindow;
-        doc = frame.contentDocument;
+  // `window`/`document` are parameters of an inner function, so the outer scope can still read the real ones.
+  const evalCode = `(async () => {
+    try {
+      let w = window;
+      let d = document;
+      const fs = ${fsJson};
+      if (fs) {
+        const frame = document.querySelector(fs);
+        if (!frame) throw new Error("No frame matches frameSelector " + fs);
+        if (frame.contentWindow) {
+          w = frame.contentWindow;
+          d = frame.contentDocument;
+        }
       }
+      const omp = window.__omp;
+      const run = async (window, document, page, args, ref) => {
+        ${code}
+      };
+      const v = await run(w, d, w.wrappedJSObject || w, ${JSON.stringify(args)}, (n) => omp.resolve({ ref: n, frameSelector: fs }));
+      return { ok: true, v: omp.toJSONSafe(v) };
+    } catch (e) {
+      return { ok: false, e: String((e && e.message) || e) };
     }
-    const page = win.wrappedJSObject || win;
-    const document = doc;
-    const window = win;
-    const args = ${JSON.stringify(args)};
-    const ref = (n) => window.__omp.resolve({ ref: n, frameSelector: fs });
-    ${code}
   })()`;
-  const evalCode = `Promise.resolve().then(() => ${body}).then(v => ({ ok: true, v: window.__omp.toJSONSafe(v) }), e => ({ ok: false, e: String(e && e.message || e) }))`;
   const run = async () => {
     try {
       await browser.tabs.executeScript(tabId, { file: "/content.js", frameId: 0 });

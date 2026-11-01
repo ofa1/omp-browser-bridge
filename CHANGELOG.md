@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Snapshot after iframe reload**: pruning stale element refs no longer throws `can't access dead object` when an iframe's document was destroyed; dead refs are dropped, and `resolve` reports them as stale.
+- **Select2 / custom dropdown options**: snapshots now list `role=option` entries nested inside a `role=listbox`, so open custom dropdown options get refs.
+- **Synthetic key events**: `press` now sets legacy `keyCode`/`which` (Enter=13, ArrowDown=40, letters, digits, etc.), so libraries that only read them (Select2, jQuery UI, Bootstrap) respond.
+- **`firefox_eval` temporal-dead-zone error**: `executeEval` shadowed `window`/`document` in the same scope that read them (regression from ddf2f84), failing every eval with `Cannot access 'window' before initialization`. User code now runs in an inner function taking `window`/`document` as parameters; `ref()` resolves through the top-level bridge with the frame selector.
+
 ## [0.3.0] - 2026-11-01
 
 ### Added
